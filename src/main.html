@@ -4,12 +4,18 @@
     <meta charset="UTF-8">
     <title>RaidWidget</title>
     <!-- <link rel="stylesheet" href="RaidNotification.css"> -->
+     <link rel="stylesheet" href="main.css">
     <link href="https://fonts.googleapis.com" rel="stylesheet">
     
-        <script src="https://cdn.jsdelivr.net/npm/@streamerbot/client/dist/streamerbot-client.js"></script>
-        <script src="main.js" defer></script>
+        
 </head>
 <body>
-
+    <div class="window-container">
+        <!-- Заголовок окна (опционально) -->
+        <div class="window-header">Chat v1.0</div>
+        <ul id="chat-container" class="content-area crt-effect"></ul>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/@streamerbot/client/dist/streamerbot-client.js"></script>
+    <script src="main.js" defer></script>
 </body>
 </html>

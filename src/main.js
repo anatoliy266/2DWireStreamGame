@@ -1,24 +1,44 @@
-const client = new StreamerbotClient();
-const isGameStart = false;
-
-const playersNodes = [];
-
 /**
  * === NETWORK RAID MVP ===
- * Основано на GDD: Firewall, Injector, LoadBalancer vs Legacy Mainframe
+ * Основано на GDD: Firewall, Injector, LoadBalancer vs Legacy Mainframe + The Hops
  */
+
+const client = new StreamerbotClient();
+const chatContainer = document.getElementById('chat-container');
+let game = null;
 
 // --- КОНФИГУРАЦИЯ ---
 const CONFIG = {
     LATENCY_MAX: 100,
     LATENCY_COST_BASIC: 10,
     LATENCY_COST_ULT: 25,
-    RECONNECT_TURNS: 2
+    RECONNECT_TURNS: 2,
+    SEARCH_COST: 15, // Стоимость поиска бонуса
+    SEARCH_CHANCE: 0.5 // Шанс найти бонус
 };
+
+// --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ВЫВОДА ---
+function printMessage(message, user = "SYSTEM") {
+    const messageItem = document.createElement('li');
+    messageItem.className = 'message-box';
+    const userColor = user === "SYSTEM" ? '#00ff00' : '#dad607';
+
+    messageItem.innerHTML = `
+        <span class="username" style="color: ${userColor}">${user}:</span>
+        <span class="text">${message}</span>
+    `;
+
+    chatContainer.prepend(messageItem);
+
+    // Удаление старых сообщений
+    if (chatContainer.children.length > 50) {
+        chatContainer.lastChild.remove();
+    }
+}
 
 // --- БАЗОВЫЙ КЛАСС УЗЛА ---
 class NetworkNode {
-    constructor(name, role, hp, playerName) {
+    constructor(name, role, hp, playerName = "NPC") {
         this.name = name;
         this.role = role;
         this.hp = hp;
@@ -26,118 +46,110 @@ class NetworkNode {
         this.playerName = playerName;
         this.latency = 0;
         this.isDead = false;
-        this.reconnectTimer = 0; // Если > 0, узел в стане
+        this.reconnectTimer = 0;
         this.statuses = {
-            vulnerable: false, // Для комбо Traceback -> Inject
-            shielded: false,   // Intercept
-            obfuscated: false  // Зашумление
+            vulnerable: false,
+            shielded: false,
+            obfuscated: false
         };
     }
 
-    // Проверка состояния
     checkStatus() {
-        if (this.hp <= 0) {
+        if (this.hp <= 0 && !this.isDead) {
             this.hp = 0;
             this.isDead = true;
-            console.log(`%c💀 ${this.name} отключен от сети (DISCONNECT)!`, 'color: red; font-weight: bold;');
+            printMessage(`%c💀 ${this.playerName} (${this.name}) отключен от сети!`, "SYSTEM");
         }
         if (this.latency >= CONFIG.LATENCY_MAX && this.reconnectTimer === 0) {
             this.reconnectTimer = CONFIG.RECONNECT_TURNS;
-            this.latency = 0; // Сброс при перегрузке
-            console.log(`%c🔌 ${this.name} перегрелся! ПЕРЕПОДКЛЮЧЕНИЕ (${CONFIG.RECONNECT_TURNS} ход.)`, 'color: orange; font-weight: bold;');
+            this.latency = 0;
+            printMessage(`%c🔌 ${this.playerName} перегрелся! ПЕРЕПОДКЛЮЧЕНИЕ (${CONFIG.RECONNECT_TURNS} ход.)`, "SYSTEM");
         }
     }
 
-    // Получение урона
     takeDamage(amount, sourceName) {
         if (this.isDead) return;
-
         let finalDamage = amount;
 
-        // Механика Intercept (Щит)
         if (this.statuses.shielded) {
-            console.log(`🛡️ ${this.name} блокирует атаку щитом!`);
+            printMessage(`🛡️ ${this.playerName} блокирует атаку щитом!`);
             this.statuses.shielded = false;
             finalDamage = 0;
         }
-
-        // Механика Obfuscate (Шум)
         if (this.statuses.obfuscated) {
-            console.log(`🌫️ Атака по ${this.name} потерялась в шуме (урон снижен)`);
+            printMessage(`🌫️ Атака по ${this.playerName} потерялась в шуме.`);
             finalDamage = Math.floor(amount * 0.5);
             this.statuses.obfuscated = false;
         }
 
         this.hp -= finalDamage;
-        console.log(`💥 ${sourceName} наносит ${finalDamage} урона по ${this.name}. [HP: ${this.hp}/${this.maxHp}]`);
+        printMessage(`💥 ${sourceName} -> ${this.playerName}: -${finalDamage} HP [${this.hp}/${this.maxHp}]`);
         this.checkStatus();
     }
 
-    // Изменение Latency
     addLatency(amount) {
         this.latency += amount;
         if (this.latency < 0) this.latency = 0;
-        console.log(`📶 ${this.name} Latency: ${this.latency}% (+${amount})`);
+        // printMessage(`📶 ${this.playerName} Latency: ${this.latency}% (+${amount})`); // Спам в чат можно убрать
         this.checkStatus();
     }
+    
+    canAct() {
+        if (this.isDead) { printMessage(`${this.playerName} мертв.`); return false; }
+        if (this.reconnectTimer > 0) { printMessage(`${this.playerName} перезагружается...`); return false; }
+        return true;
+    }
+
+    payCost(cost) { this.addLatency(cost); }
 }
 
 // --- КЛАССЫ ГЕРОЕВ ---
-
 class Firewall extends NetworkNode {
     constructor(playerName) { super("Firewall", "Tank", 150, playerName); }
-
-    skill1_Intercept(target) { // !intercept
+    skill1_Intercept(target) {
         if (!this.canAct()) return;
-        console.log(`🛡️ ${this.name} использует !intercept на ${target.name}`);
+        printMessage(`${this.playerName} использует !intercept на ${target.playerName}`);
         target.statuses.shielded = true;
         this.payCost(CONFIG.LATENCY_COST_BASIC);
     }
-
     skill2_PacketFilter(party) { // !packet_filter
         if (!this.canAct()) return;
-        console.log(`🛡️ ${this.name} использует !packet_filter. Группа получает временную защиту.`);
+        printMessage(`🛡️ ${this.playerName} использует !packet_filter. Группа получает временную защиту.`);
         // Упрощение для MVP: лечим чуть-чуть всех, имитируя снижение урона
         party.forEach(p => { if(!p.isDead) p.hp += 5; });
         this.payCost(CONFIG.LATENCY_COST_ULT);
     }
-
-    skill3_Traceback(target) { // !traceback
+    skill3_Traceback(target) {
         if (!this.canAct()) return;
-        console.log(`🎯 ${this.name} использует !traceback на ${target.name}. УЯЗВИМОСТЬ ВСКРЫТА!`);
-        target.takeDamage(10, this.name);
-        target.statuses.vulnerable = true; // Триггер для Инжектора
-        // Бесплатно по GDD
+        printMessage(`${this.playerName} использует !traceback на ${target.name}. УЯЗВИМОСТЬ!`);
+        target.takeDamage(10, this.playerName);
+        target.statuses.vulnerable = true;
     }
 }
 
 class Injector extends NetworkNode {
     constructor(playerName) { super("Injector", "DD", 80, playerName); }
-
-    skill1_Payload(target) { // !payload
-        // debugger;
+    skill1_Payload(target) {
         if (!this.canAct()) return;
-        console.log(`⚔️ ${this.name} отправляет !payload в ${target.name}`);
-        target.takeDamage(20, this.name);
+        printMessage(`${this.playerName} использует !payload на ${target.name}`);
+        target.takeDamage(20, this.playerName);
         this.payCost(CONFIG.LATENCY_COST_BASIC);
     }
-
-    skill2_Inject(target) { // !inject
+    skill2_Inject(target) {
         if (!this.canAct()) return;
         if (target.statuses.vulnerable) {
-            console.log(`☣️ ${this.name} использует !inject в УЯЗВИМОСТЬ! КРИТИЧЕСКИЙ УРОН!`);
-            target.takeDamage(50, this.name);
-            target.statuses.vulnerable = false; // Снимаем метку
+            printMessage(`${this.playerName} использует !inject КРИТ!`);
+            target.takeDamage(50, this.playerName);
+            target.statuses.vulnerable = false;
         } else {
-            console.log(`⚔️ ${this.name} пытается сделать !inject, но уязвимости нет. Обычный урон.`);
-            target.takeDamage(15, this.name);
+            printMessage(`${this.playerName} использует !inject (нет уязвимости)`);
+            target.takeDamage(15, this.playerName);
         }
         this.payCost(CONFIG.LATENCY_COST_ULT);
     }
-
     skill3_Obfuscate() { // !obfuscate
         if (!this.canAct()) return;
-        console.log(`👻 ${this.name} включает !obfuscate (маскировка трафика)`);
+        printMessage(`👻 ${this.name} включает !obfuscate (маскировка трафика)`);
         this.statuses.obfuscated = true;
         this.payCost(CONFIG.LATENCY_COST_BASIC);
     }
@@ -145,66 +157,59 @@ class Injector extends NetworkNode {
 
 class LoadBalancer extends NetworkNode {
     constructor(playerName) { super("LoadBalancer", "Support", 100, playerName); }
-
-    skill1_Bridge(party) { // !bridge
+    skill1_Bridge(party) {
         if (!this.canAct()) return;
-        console.log(`⚖️ ${this.name} строит !bridge. Выравнивание Latency...`);
-        let totalLat = 0;
-        let activeCount = 0;
+        let totalLat = 0; let activeCount = 0;
         party.forEach(p => { if (!p.isDead) { totalLat += p.latency; activeCount++; } });
         const avg = Math.floor(totalLat / activeCount);
         party.forEach(p => { if (!p.isDead) p.latency = avg; });
-        console.log(`Все живые узлы теперь имеют Latency: ${avg}%`);
+        printMessage(`Latency уравнена: ${avg}%`);
         this.payCost(CONFIG.LATENCY_COST_BASIC);
     }
-
     skill2_Compress(target) { // !compress
         if (!this.canAct()) return;
-        console.log(`🐌 ${this.name} делает !compress на ${target.name}`);
+        printMessage(`🐌 ${this.name} делает !compress на ${target.name}`);
         target.addLatency(20); // Забиваем канал боссу
         this.payCost(CONFIG.LATENCY_COST_ULT);
     }
-
-    skill3_Hotfix(target) { // !hotfix
+    skill3_Hotfix(target) {
         if (!this.canAct()) return;
-        console.log(`🚑 ${this.name} накатывает !hotfix на ${target.name}`);
-        target.hp += 30;
-        if (target.hp > target.maxHp) target.hp = target.maxHp;
-        target.addLatency(-20); // Снижаем латенси
+        printMessage(`${this.playerName} лечит ${target.playerName}`);
+        target.hp = Math.min(target.hp + 30, target.maxHp);
+        target.addLatency(-20);
         this.payCost(CONFIG.LATENCY_COST_BASIC);
     }
 }
 
-// Расширение прототипа для общих методов героев
-NetworkNode.prototype.canAct = function() {
-    if (this.isDead) { console.log(`${this.name} мертв.`); return false; }
-    if (this.reconnectTimer > 0) { console.log(`${this.name} перезагружается...`); return false; }
-    return true;
-};
+// --- ВРАГИ ---
+class TrashMob extends NetworkNode {
+    constructor(type, hp) {
+        super(type, "MOB", hp, type);
+    }
+    act(party) {
+        const target = party[Math.floor(Math.random() * party.length)];
+        if (target && !target.isDead) {
+            printMessage(`🤖 ${this.name} атакует ${target.playerName}`);
+            target.takeDamage(15, this.name);
+        }
+    }
+}
 
-NetworkNode.prototype.payCost = function(cost) {
-    this.addLatency(cost);
-};
-
-
-// --- БОСС ---
 class Boss extends NetworkNode {
     constructor() {
-        super("Legacy Mainframe", "BOSS", 500);
+        super("Legacy Mainframe", "BOSS", 500, "BOSS");
         this.turnCount = 0;
+        this.targets = [];
     }
-
     act(party) {
         if (this.reconnectTimer > 0) {
             this.reconnectTimer--;
-            console.log(`💤 Босс перезагружается. Осталось ходов: ${this.reconnectTimer}`);
+            printMessage(`💤 Босс перезагружается...`);
             return;
         }
         if (this.latency >= 100) {
-             // Босс тоже подчиняется правилам Latency
-             this.reconnectTimer = 1; 
-             this.latency = 0;
-             console.log(`🔥 БОСС ПЕРЕГРЕЛСЯ!`);
+             this.reconnectTimer = 1; this.latency = 0;
+             printMessage(`🔥 БОСС ПЕРЕГРЕЛСЯ!`);
              return;
         }
 
@@ -212,244 +217,289 @@ class Boss extends NetworkNode {
         const aliveHeroes = party.filter(h => !h.isDead);
         if (aliveHeroes.length === 0) return;
 
-        console.log(`%c⚠️ ХОД БОССА (Turn ${this.turnCount})`, 'color: red; font-size: 14px');
-
-        // Логика из GDD: каждые 3 хода спец атака
+        printMessage(`--- ХОД БОССА (Turn ${this.turnCount}) ---`, "SYSTEM");
+        
+        // if (this.turnCount % 3 === 0) {
+        //     printMessage(`☠️ БОСС ИСПОЛЬЗУЕТ !OVERLOAD (AOE)`);
+        //     aliveHeroes.forEach(h => h.takeDamage(15, this.name));
+        //     this.addLatency(20);
+        // } else {
+        //     // Атака случайной цели
+        //     const target = aliveHeroes[Math.floor(Math.random() * aliveHeroes.length)];
+        //     printMessage(`🤖 Босс атакует ${target.playerName}`);
+        //     target.takeDamage(25, this.name);
+        //     this.addLatency(5);
+        // }
         if (this.turnCount % 3 === 0) {
             this.overload(aliveHeroes);
         } else {
-            // Атака самого слабого (по HP)
-            aliveHeroes.sort((a, b) => a.hp - b.hp);
-            const target = aliveHeroes[0];
-            console.log(`🤖 Босс атакует слабейшего: ${target.name}`);
-            target.takeDamage(25, this.name);
-            this.addLatency(5);
+            //атака выбранных на предыдущем ходу целей
+            if (this.targets.length == 0) this.targets = this.aim_targets(party);
+            this.targets.forEach(target => {
+                printMessage(`🤖 Босс атакует ${target.playerName}`);
+                target.takeDamage(25, this.name);
+                this.addLatency(5);
+            });
+            this.targets = this.aim_targets(party);
+
         }
     }
+    aim_targets(party){
+        const targets = [];
+        const targetsCount = 1;
+        if (party.length > 3)  targetsCount = Math.floor(Math.random() * (party.length - 3 + 1)) + 3;
+        while (targets.length < targetsCount) {
+            const randomPlayer = party[Math.floor(Math.random() * party.length)];
+            
+            // Проверяем, чтобы не добавить одного и того же дважды
+            if (!targets.includes(randomPlayer)) {
+                targets.push(randomPlayer);
+            }
+        }
+        printMessage(`☠️ БОСС нацелился на ${targets.map(t => t.playerName).join(' | ')}, защищайте союзников`);
+        return targets;
+    }
+}
 
-    overload(heroes) {
-        console.log(`☠️ БОСС ИСПОЛЬЗУЕТ !OVERLOAD (AOE)`);
-        heroes.forEach(h => h.takeDamage(15, this.name));
-        this.addLatency(20);
+// --- ЛОГИКА КОМНАТ (THE HOPS) ---
+class Room {
+    constructor(level, type) {
+        this.level = level;
+        this.type = type; // "mob", "boss", "empty"
+        this.enemy = null;
+        this.isCleared = false;
+        
+        this.setup();
+    }
+
+    setup() {
+        if (this.type === "mob") {
+            const names = ["Firewall Watchdog", "AntiVirus Daemon", "Protocol Droid"];
+            const name = names[Math.floor(Math.random() * names.length)];
+            this.enemy = new TrashMob(name, 100 + (this.level * 20));
+        } else if (this.type === "boss") {
+            this.enemy = new Boss();
+        }
     }
 }
 
 // --- ДВИЖОК ИГРЫ ---
-
 class Game {
     constructor() {
-        this.heroes = [
-            // new Firewall(),
-            // new Injector(),
-            // new LoadBalancer()
+        this.heroes = [];
+        this.currentRoomIndex = 0;
+        this.rooms = [
+            new Room(1, "mob"),
+            new Room(2, "mob"),
+            new Room(3, "boss") // Финальный слой
         ];
-        this.boss = new Boss();
-        this.turn = 1;
-        this.isGameOver = false;
         this.isGameStart = false;
+        this.isGameOver = false;
+        this.timerId = null;
+    }
 
-        this.timerId = null; // Храним ID таймера, чтобы потом остановить
-        this.counter = 0;
+    startGame() {
+        this.isGameStart = true;
+        this.startTimer(10); // Тики игры
+        printMessage("=== СЕТЕВОЙ РЕЙД НАЧАЛСЯ! ===", "SYSTEM");
+        this.enterRoom();
+    }
 
-        this.printIntro();
-
-        this.startTimer(10);
+    enterRoom() {
+        const room = this.rooms[this.currentRoomIndex];
+        printMessage(`>>> ВХОД В СЛОЙ ${room.level}: ${room.enemy ? room.enemy.name : "Пусто"} <<<`, "SYSTEM");
+        printMessage("Доступные действия: !Attack, !Heal, !Search (поиск бонуса)");
     }
 
     startTimer(seconds) {
-        // Если таймер уже запущен, сначала очистим старый
-        if (this.timerId) this.stopTimer();
-
-        console.log("Таймер запущен!");
-
-        // ВАЖНО: Используем стрелочную функцию () =>, чтобы this указывал на класс
-        this.timerId = setInterval(() => {
-            this.nextTurn();
-        }, seconds * 1000); // Переводим секунды в миллисекунды
+        if (this.timerId) clearInterval(this.timerId);
+        this.timerId = setInterval(() => this.nextTurn(), seconds * 1000);
     }
 
-    printIntro() {
-        console.clear();
-        console.log("%c=== NETWORK RAID START ===", "color: lime; font-size: 20px; background: black; padding: 10px;");
-        console.log("Цель: Уничтожить Legacy Mainframe.");
-        console.log("Внимание: Следите за Latency! Если будет 100% - вы пропустите 2 хода.");
-        this.help();
-        this.status();
-    }
-
-    status() {
-        console.table(this.heroes.map(h => ({
-            Name: h.name,
-            HP: `${h.hp}/${h.maxHp}`,
-            Latency: `${h.latency}%`,
-            Status: h.reconnectTimer > 0 ? `RECONNECT (${h.reconnectTimer})` : 'Active'
-        })));
-        console.log(`👾 BOSS HP: ${this.boss.hp} | Latency: ${this.boss.latency}%`);
-    }
-
-    help() {
-        console.group("📜 СПИСОК КОМАНД (введите в консоль):");
-        console.log("game.fw_intercept(heroIndex)  - Firewall: Защитить союзника (0=FW, 1=INJ, 2=LB)");
-        console.log("game.fw_traceback()           - Firewall: Атака + Уязвимость (на Босса)");
-        console.log("game.inj_payload()            - Injector: Базовый урон");
-        console.log("game.inj_inject()             - Injector: Крит (если есть уязвимость)");
-        console.log("game.inj_obfuscate()          - Injector: Защита себя");
-        console.log("game.lb_bridge()              - LoadBalancer: Уравнять Latency всем");
-        console.log("game.lb_hotfix(heroIndex)     - LoadBalancer: Лечение + Снижение Latency");
-        console.log("game.skip()                   - Пропустить ход (снижает Latency на 15)");
-        console.groupEnd();
-    }
-
-    // Обработка конца хода
     nextTurn() {
-        if (this.boss.hp <= 0) {
-            console.log("%c🏆 ПОБЕДА! СИСТЕМА ВЗЛОМАНА.", "color: lime; font-size: 30px");
+        if (this.isGameOver || !this.isGameStart) return;
+
+        const room = this.rooms[this.currentRoomIndex];
+        const activeHeroes = this.heroes.filter(h => !h.isDead);
+
+        // 1. Проверка вайпа
+        if (activeHeroes.length === 0 && this.heroes.length > 0) {
+            printMessage("💀 ВАЙП! Связь потеряна.", "SYSTEM");
             this.isGameOver = true;
+            clearInterval(this.timerId);
             return;
         }
 
-        // Ход босса
-        this.boss.act(this.heroes);
-
-        // Проверка поражения
-        if (this.heroes.every(h => h.isDead)) {
-            console.log("%c💀 ВАЙП! Соединение разорвано.", "color: red; font-size: 30px");
-            this.isGameOver = true;
-            return;
+        // 2. Логика боя
+        if (room.enemy && !room.enemy.isDead) {
+            // Враг атакует
+            room.enemy.act(activeHeroes);
+            
+            // Если враг умер от дотов или рефлектов (на будущее)
+            if (room.enemy.hp <= 0) {
+                room.enemy.isDead = true;
+                printMessage(`🏆 ${room.enemy.name} уничтожен!`, "SYSTEM");
+                this.roomCleared();
+            }
+        } else if (!room.isCleared) {
+            // Если врага не было изначально
+            this.roomCleared();
         }
 
-        // Обновление таймеров героев
+        // 3. Обновление статусов героев (реконнект)
         this.heroes.forEach(h => {
             if (h.reconnectTimer > 0) {
                 h.reconnectTimer--;
-                if(h.reconnectTimer === 0) console.log(`✅ ${h.name} снова в сети!`);
+                if(h.reconnectTimer === 0) printMessage(`✅ ${h.playerName} снова в сети!`);
             }
         });
-
-        this.turn++;
-        console.log(`\n--- TURN ${this.turn} ---`);
-        this.status();
+        
+        // Авто-снижение Latency в простое
+        if (room.isCleared) {
+             this.heroes.forEach(h => h.addLatency(-5));
+        }
     }
 
-    // --- API ИГРОКА ---
-
-    // Firewall Actions
-    fw_intercept(targetIdx) {
-        if(this.checkEnd()) return;
-        this.heroes[0].skill1_Intercept(this.heroes[targetIdx]);
-        this.nextTurn();
-    }
-    fw_traceback() {
-        if(this.checkEnd()) return;
-        this.heroes[0].skill3_Traceback(this.boss);
-        this.nextTurn();
-    }
-
-    // Injector Actions
-    inj_payload() {
-        if(this.checkEnd()) return;
-        this.heroes[1].skill1_Payload(this.boss);
-        this.nextTurn();
-    }
-    inj_inject() {
-        if(this.checkEnd()) return;
-        this.heroes[1].skill2_Inject(this.boss);
-        this.nextTurn();
-    }
-    inj_obfuscate() {
-        if(this.checkEnd()) return;
-        this.heroes[1].skill3_Obfuscate();
-        this.nextTurn();
+    roomCleared() {
+        const room = this.rooms[this.currentRoomIndex];
+        room.isCleared = true;
+        
+        if (room.type === "boss") {
+            printMessage("🎉 ПОБЕДА! LEGACY MAINFRAME ВЗЛОМАН!", "SYSTEM");
+            this.isGameOver = true;
+            clearInterval(this.timerId);
+        } else {
+            printMessage("✅ Слой зачищен. Переход на следующий уровень через 10 сек...", "SYSTEM");
+            setTimeout(() => {
+                this.currentRoomIndex++;
+                if (this.currentRoomIndex < this.rooms.length) {
+                    this.enterRoom();
+                }
+            }, 10000);
+        }
     }
 
-    // LoadBalancer Actions
-    lb_bridge() {
-        if(this.checkEnd()) return;
-        this.heroes[2].skill1_Bridge(this.heroes);
-        this.nextTurn();
-    }
-    lb_hotfix(targetIdx) {
-        if(this.checkEnd()) return;
-        this.heroes[2].skill3_Hotfix(this.heroes[targetIdx]);
-        this.nextTurn();
+    // --- ИГРОВЫЕ ДЕЙСТВИЯ ---
+
+    // Поиск бонусов (механика The Hops)
+    search(player) {
+        const hero = this.heroes.find(h => h.playerName === player);
+        if (!hero || hero.isDead) return;
+
+        const room = this.rooms[this.currentRoomIndex];
+        if (!room.isCleared && room.enemy && !room.enemy.isDead) {
+            // Можно искать и во время боя, но это риск
+        }
+
+        hero.addLatency(CONFIG.SEARCH_COST);
+        if (Math.random() < CONFIG.SEARCH_CHANCE) {
+            printMessage(`🔍 ${player} нашел "Бит Данных"! Все восстановили 20 HP.`);
+            this.heroes.forEach(h => { if (!h.isDead) h.hp = Math.min(h.hp + 20, h.maxHp); });
+        } else {
+            printMessage(`🔍 ${player} ничего не нашел, только потратил трафик.`);
+        }
     }
 
-    // General
-    skip() {
-        if(this.checkEnd()) return;
-        console.log("⏳ Команда пропускает ход для охлаждения систем...");
-        this.heroes.forEach(h => {
-            if (!h.isDead && h.reconnectTimer === 0) {
-                h.addLatency(-15);
-            }
-        });
-        this.nextTurn();
+    // Обработка атаки
+    processAttack(playerName) {
+        const hero = this.heroes.find(h => h.playerName === playerName);
+        if (!hero) return;
+        
+        const room = this.rooms[this.currentRoomIndex];
+        if (!room.enemy || room.enemy.isDead) {
+            printMessage(`${playerName}, здесь некого бить!`);
+            return;
+        }
+
+        // Пример маппинга простых команд на скиллы
+        if (hero.role === "DD") {
+            if (hero instanceof Injector) hero.skill1_Payload(room.enemy);
+        } else if (hero.role === "Tank") {
+            if (hero instanceof Firewall) hero.skill3_Traceback(room.enemy);
+        } else {
+            printMessage(`${playerName} пытается ударить палкой, но он саппорт.`);
+            room.enemy.takeDamage(5, playerName); // слабый удар
+            hero.addLatency(5);
+        }
+        
+        // Проверка смерти врага сразу после удара
+        if (room.enemy.hp <= 0 && !room.enemy.isDead) {
+            room.enemy.isDead = true;
+            printMessage(`🏆 ${room.enemy.name} уничтожен игроком ${playerName}!`, "SYSTEM");
+            this.roomCleared();
+        }
     }
 
-    checkEnd() {
-        if (this.isGameOver) { console.log("Игра окончена. Обновите страницу для рестарта."); return true; }
-        return false;
+    addPlayer(playerName, roleArg) {
+        if (this.heroes.some(h => h.playerName === playerName)) return;
+        
+        // Если роль не задана, рандом
+        let role = roleArg;
+        if (!role) {
+            const roles = ["tank", "dd", "heal"];
+            role = roles[Math.floor(Math.random() * roles.length)];
+        }
+
+        let newHero;
+        switch (role.toLowerCase()) {
+            case "tank": newHero = new Firewall(playerName); break;
+            case "dd": newHero = new Injector(playerName); break;
+            case "heal": newHero = new LoadBalancer(playerName); break;
+            default: newHero = new Injector(playerName); // Фоллбек
+        }
+        
+        this.heroes.push(newHero);
+        printMessage(`${playerName} присоединился как ${newHero.name}`, "SYSTEM");
     }
 }
 
-// Запуск игры
-
-// const CLASSES = {
-//     tank,
-//     dd,
-//     heal,
-// };
-
+// --- STREAMERBOT EVENTS ---
 
 client.on('Raw.ActionCompleted', async (data) => {
-    console.log("command triggered", data);
-    if (!data.data || !data.data.arguments){
-        console.log("failed data.data reading", data);
-        // return;
+    // Безопасное чтение данных
+    if (!data?.data?.arguments) return;
+
+    const args = data.data.arguments;
+    const command = args.commandName;
+    const userName = data.data.user?.name || "Anonymous";
+
+    // 1. Старт игры
+    if (command === "StartGame") {
+        if (!game || game.isGameOver) {
+            game = new Game();
+            game.startGame();
+        } else {
+            printMessage("Игра уже идет!", "SYSTEM");
+        }
+        return;
     }
-    if (data.data.arguments.commandName === "StartGame"){
-        console.log("im here");
-        game = new Game();
-        game.isGameStart = true;
+
+    if (!game || !game.isGameStart || game.isGameOver) return;
+
+    // 2. Присоединение
+    if (command === "JoinBattle") {
+        // Можно передать роль аргументом, если настроено в Streamerbot
+        const role = args.role || null; 
+        game.addPlayer(userName, role);
     }
-    if (game && game.isGameStart){
-        if (data.data.arguments.commandName === "JoinBattle"){
-            // const roles = ["tank", "dd", "heal"];
-            const roles = ["dd"];
-            const role = roles[Math.floor(Math.random() * roles.length)];
-            let player;
-            switch (role) {
-                case "tank":
-                    player = new Firewall(data.data.user.name);
-                    break;
-                case "dd":
-                    // Code to be executed if expression === value2
-                    player = new Injector(data.data.user.name);
-                    break;
-                case "heal":
-                    player = new LoadBalancer(data.data.user.name);
-                    // Code to be executed if expression === value2
-                    break;
-                // ... more cases ...
-                default:
-                    return;
-            }
-            game.heroes.push(player);
-        }
-        if (data.data.arguments.commandName === "Attack"){
-            game.heroes.forEach(hero => {
-                if (hero.playerName === data.data.user.name && hero.name === "Injector"){
-                    console.log("im here")
-                    if(game.checkEnd()) return;
-                    // debugger;
-                    hero.skill1_Payload(game.boss);
-                } else if (hero.playerName === data.data.user.name && hero.name !== "Injector"){
-                    console.log("${data.data.user.name} is not a  DD");
-                }
-            });
-        }
-        if (data.data.arguments.commandName == "Heal"){
-            
-        }
+
+    // 3. Атака
+    if (command === "Attack") {
+        game.processAttack(userName);
+    }
+
+    // 4. Поиск (The Hops mechanic)
+    if (command === "Search") {
+        game.search(userName);
+    }
+    
+    // 5. Лечение (упрощенно для примера)
+    if (command === "Heal") {
+         const hero = game.heroes.find(h => h.playerName === userName);
+         if (hero && hero instanceof LoadBalancer) {
+             // Лечим самого раненого
+             const target = game.heroes.sort((a,b) => a.hp - b.hp)[0];
+             hero.skill3_Hotfix(target);
+         }
     }
 });
