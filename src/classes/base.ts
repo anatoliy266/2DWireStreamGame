@@ -1,10 +1,12 @@
 import { CONFIG } from "../config";
+import { printMessage } from "../utils";
 
 export type boss = "boss";
+export type mob = "mob";
 
 export type players = "dd" | "heal" | "tank";
 
-export type role = players | boss;
+export type role = players | boss | mob;
 
 export class NetworkNode {
   name: string;
@@ -38,48 +40,36 @@ export class NetworkNode {
 
   // Проверка состояния
   checkStatus() {
-    if (this.hp <= 0) {
+    if (this.hp <= 0 && !this.isDead) {
       this.hp = 0;
       this.isDead = true;
-      console.log(
-        `%c💀 ${this.name} отключен от сети (DISCONNECT)!`,
-        "color: red; font-weight: bold;",
-      );
+      printMessage(`%c💀 ${this.playerName} (${this.name}) отключен от сети!`, "SYSTEM");
     }
     if (this.latency >= CONFIG.LATENCY_MAX && this.reconnectTimer === 0) {
       this.reconnectTimer = CONFIG.RECONNECT_TURNS;
-      this.latency = 0; // Сброс при перегрузке
-      console.log(
-        `%c🔌 ${this.name} перегрелся! ПЕРЕПОДКЛЮЧЕНИЕ (${CONFIG.RECONNECT_TURNS} ход.)`,
-        "color: orange; font-weight: bold;",
-      );
+      this.latency = 0;
+      printMessage(`%c🔌 ${this.playerName} перегрелся! ПЕРЕПОДКЛЮЧЕНИЕ (${CONFIG.RECONNECT_TURNS} ход.)`, "SYSTEM");
     }
   }
 
   // Получение урона
   takeDamage(amount: number, sourceName: string) {
     if (this.isDead) return;
-
     let finalDamage = amount;
 
-    // Механика Intercept (Щит)
     if (this.statuses.shielded) {
-      console.log(`🛡️ ${this.name} блокирует атаку щитом!`);
+      printMessage(`🛡️ ${this.playerName} блокирует атаку щитом!`);
       this.statuses.shielded = false;
       finalDamage = 0;
     }
-
-    // Механика Obfuscate (Шум)
     if (this.statuses.obfuscated) {
-      console.log(`🌫️ Атака по ${this.name} потерялась в шуме (урон снижен)`);
+      printMessage(`🌫️ Атака по ${this.playerName} потерялась в шуме.`);
       finalDamage = Math.floor(amount * 0.5);
       this.statuses.obfuscated = false;
     }
 
     this.hp -= finalDamage;
-    console.log(
-      `💥 ${sourceName} наносит ${finalDamage} урона по ${this.name}. [HP: ${this.hp}/${this.maxHp}]`,
-    );
+    printMessage(`💥 ${sourceName} -> ${this.playerName}: -${finalDamage} HP [${this.hp}/${this.maxHp}]`);
     this.checkStatus();
   }
 
@@ -87,21 +77,22 @@ export class NetworkNode {
   addLatency(amount: number) {
     this.latency += amount;
     if (this.latency < 0) this.latency = 0;
-    console.log(`📶 ${this.name} Latency: ${this.latency}% (+${amount})`);
+    // console.log(`📶 ${this.name} Latency: ${this.latency}% (+${amount})`);
     this.checkStatus();
   }
 
-  canAct() {
+  canAct(): boolean {
     if (this.isDead) {
-      console.log(`${this.name} мертв.`);
+      printMessage(`${this.playerName} мертв.`);
       return false;
     }
     if (this.reconnectTimer > 0) {
-      console.log(`${this.name} перезагружается...`);
+      printMessage(`${this.playerName} перезагружается...`);
       return false;
     }
     return true;
   }
+
   payCost(cost: number) {
     this.addLatency(cost);
   }

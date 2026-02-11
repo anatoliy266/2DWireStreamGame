@@ -1,3 +1,4 @@
+import { StreamerbotClient } from "@streamerbot/client";
 import { players, role } from "./classes/base";
 import { Firewall } from "./classes/firewall";
 import { Game } from "./classes/game";
