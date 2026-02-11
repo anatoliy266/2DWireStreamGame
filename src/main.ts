@@ -5,52 +5,77 @@ import { Game } from "./classes/game";
 import { Injector } from "./classes/injector";
 import { LoadBalancer } from "./classes/loadbalancer";
 
+// Инициализация клиента
 const client = new StreamerbotClient();
 
+// Хранилище состояния игры
 let game: Game | undefined;
 
 client.on("Raw.ActionCompleted", async (data) => {
-  console.log("command triggered", data);
+  // 1. Безопасная валидация данных
   if (!data.data || !data.data.arguments) {
-    console.log("failed data.data reading", data);
+    // Можно раскомментировать для отладки, но обычно это спам
+    // console.warn("Received event without arguments", data);
     return;
   }
-  if (data.data.arguments.commandName === "StartGame") {
-    game = new Game();
-  }
 
-  if (!game || game.isGameOver) return;
+  const args = data.data.arguments;
+  const commandName = args.commandName;
+  
+  // Получаем имя пользователя безопасно (с фоллбеком)
+  const userName = data.data.user?.name || "Anonymous";
 
-  if (data.data.arguments.commandName === "JoinBattle") {
-    // const roles = ["tank", "dd", "heal"];
-    const roles: players[] = ["dd"];
-    const role = roles[Math.floor(Math.random() * roles.length)];
-    let player;
-    switch (role) {
-      case "tank":
-        player = new Firewall(data.data.user.name);
-        break;
-      case "dd":
-        // Code to be executed if expression === value2
-        player = new Injector(data.data.user.name);
-        break;
-      case "heal":
-        player = new LoadBalancer(data.data.user.name);
-        // Code to be executed if expression === value2
-        break;
+  // --- ЛОГИКА КОМАНД ---
+
+  // 1. Старт игры
+  if (commandName === "StartGame") {
+    if (!game || game.isGameOver) {
+      console.log("🎮 Запуск новой игры...");
+      game = new Game();
+      game.startGame();
+    } else {
+      console.log("⚠️ Игра уже идет!");
     }
-    game.heroes.push(player);
+    return;
   }
 
-  if (data.data.arguments.commandName === "Attack") {
-    game.heroes.forEach((hero) => {
-      if (hero.role !== "dd" || !(hero instanceof Injector))
-        return console.log("${data.data.user.name} is not a  DD");
+  // Если игры нет или она закончилась, остальные команды игнорируем
+  if (!game || !game.isGameStart || game.isGameOver) return;
 
-      hero.skill1_Payload(game!.boss);
-    });
+  // 2. Присоединение к битве
+  if (commandName === "JoinBattle") {
+    // Если в Streamerbot настроен аргумент role, берем его, иначе undefined (в Game будет рандом)
+    const roleArg = args.role as string | undefined;
+    game.addPlayer(userName, roleArg);
   }
-  if (data.data.arguments.commandName == "Heal") {
-    // TODO
+
+  // 3. Атака (делегируем логику в Game)
+  if (commandName === "Attack") {
+    game.processAttack(userName);
+  }
+
+  // 4. Поиск (механика The Hops)
+  if (commandName === "Search") {
+    game.search(userName);
+  }
+
+  // 5. Лечение
+  if (commandName === "Heal") {
+    // Ищем героя по имени игрока
+    const hero = game.heroes.find((h) => h.playerName === userName);
+    
+    // Проверяем, что это LoadBalancer
+    if (hero && hero instanceof LoadBalancer) {
+        // Находим самого раненого (сортировка по HP)
+        const aliveHeroes = game.heroes.filter(h => !h.isDead);
+        if (aliveHeroes.length > 0) {
+            const target = aliveHeroes.sort((a, b) => a.hp - b.hp)[0];
+            hero.skill3_Hotfix(target);
+        } else {
+            console.log(`🚑 ${userName}, лечить некого...`);
+        }
+    } else {
+        console.log(`⚠️ ${userName} пытается лечить, но он не LoadBalancer.`);
+    }
   }
 });
