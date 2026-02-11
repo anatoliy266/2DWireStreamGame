@@ -1,14 +1,14 @@
-import type * as StreamerbotClientModule from "@streamerbot/client";
+// import type * as StreamerbotClientModule from "@streamerbot/client";
 
-type StreamerbotClientConstructor =
-  typeof StreamerbotClientModule.StreamerbotClient;
+// type StreamerbotClientConstructor =
+//   typeof StreamerbotClientModule.StreamerbotClient;
 
-declare global {
-  interface Window {
-    StreamerbotClient: StreamerbotClientConstructor;
-  }
+// declare global {
+//   interface Window {
+//     StreamerbotClient: StreamerbotClientConstructor;
+//   }
 
-  const StreamerbotClient: StreamerbotClientConstructor;
-}
+//   const StreamerbotClient: StreamerbotClientConstructor;
+// }
 
-export {};
+// export {};

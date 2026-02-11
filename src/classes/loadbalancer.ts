@@ -1,46 +1,29 @@
 import { CONFIG } from "../config";
+import { printMessage } from "../utils";
 import { NetworkNode } from "./base";
 
 export class LoadBalancer extends NetworkNode {
-  constructor(playerName: string) {
-    super("LoadBalancer", "heal", 100, playerName);
-  }
-
+  constructor(playerName: string) { super("LoadBalancer", "heal", 100, playerName); }
   skill1_Bridge(party: NetworkNode[]) {
-    // !bridge
     if (!this.canAct()) return;
-    console.log(`⚖️ ${this.name} строит !bridge. Выравнивание Latency...`);
-    let totalLat = 0;
-    let activeCount = 0;
-    party.forEach((p) => {
-      if (!p.isDead) {
-        totalLat += p.latency;
-        activeCount++;
-      }
-    });
-    const avg = Math.floor(totalLat / activeCount);
-    party.forEach((p) => {
-      if (!p.isDead) p.latency = avg;
-    });
-    console.log(`Все живые узлы теперь имеют Latency: ${avg}%`);
+    let totalLat = 0; let activeCount = 0;
+    party.forEach(p => { if (!p.isDead) { totalLat += p.latency; activeCount++; } });
+    const avg = activeCount > 0 ? Math.floor(totalLat / activeCount) : 0;
+    party.forEach(p => { if (!p.isDead) p.latency = avg; });
+    printMessage(`Latency уравнена: ${avg}%`);
     this.payCost(CONFIG.LATENCY_COST_BASIC);
   }
-
   skill2_Compress(target: NetworkNode) {
-    // !compress
     if (!this.canAct()) return;
-    console.log(`🐌 ${this.name} делает !compress на ${target.name}`);
-    target.addLatency(20); // Забиваем канал боссу
+    printMessage(`🐌 ${this.name} делает !compress на ${target.name}`);
+    target.addLatency(20);
     this.payCost(CONFIG.LATENCY_COST_ULT);
   }
-
   skill3_Hotfix(target: NetworkNode) {
-    // !hotfix
     if (!this.canAct()) return;
-    console.log(`🚑 ${this.name} накатывает !hotfix на ${target.name}`);
-    target.hp += 30;
-    if (target.hp > target.maxHp) target.hp = target.maxHp;
-    target.addLatency(-20); // Снижаем латенси
+    printMessage(`${this.playerName} лечит ${target.playerName}`);
+    target.hp = Math.min(target.hp + 30, target.maxHp);
+    target.addLatency(-20);
     this.payCost(CONFIG.LATENCY_COST_BASIC);
   }
 }
