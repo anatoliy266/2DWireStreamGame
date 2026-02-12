@@ -54,6 +54,10 @@ client.on("Raw.ActionCompleted", async (data) => {
     game.processAttack(userName);
   }
 
+  if (commandName === "Def") {
+    game.processDef(userName);
+  } 
+
   // 4. Поиск (механика The Hops)
   if (commandName === "Search") {
     game.search(userName);
