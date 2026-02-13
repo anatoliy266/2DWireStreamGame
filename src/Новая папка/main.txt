@@ -7,6 +7,8 @@ const game = new GameController();
 
 // Подключаемся
 client.on("Raw.ActionCompleted", async (data) => {
+  console.log("im here");
+  debugger;
   if (!data.data || !data.data.arguments) return;
 
   const args = data.data.arguments;

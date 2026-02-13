@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PROJECT DPI: Infiltration</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <div id="game-container">
+        <!-- Top Bar: The Hops -->
+        <div id="top-bar">
+            <div>PROJECT "DPI" // v0.0.2</div>
+            <div class="progress-container" id="hops-display">
+                <span class="node-step active">[HOP 1]</span>
+                <span class="node-step">---</span>
+                <span class="node-step">[HOP 2]</span>
+                <span class="node-step">---</span>
+                <span class="node-step">[HOP 3]</span>
+                <span class="node-step">---</span>
+                <span class="node-step">[MAINFRAME]</span>
+            </div>
+            <div id="turn-timer">TURN: 15s</div>
+        </div>
+
+        <!-- Main Stage -->
+        <div id="main-stage">
+            <!-- Left: Enemies -->
+            <div class="panel" id="enemies-panel">
+                <div class="panel-title">TARGETS (A1-A3)</div>
+                <div id="enemy-list"></div>
+            </div>
+
+            <!-- Center: Buffer -->
+            <div class="panel" id="buffer-panel">
+                <div class="panel-title">NETWORK BUFFER</div>
+                <div id="attack-slots"></div>
+                <hr style="border-color: #333; width: 100%;">
+                <div id="defense-slots"></div>
+            </div>
+
+            <!-- Right: Raid -->
+            <div class="panel" id="raid-panel">
+                <div class="panel-title">DESIGNATED NODES (D1-D4)</div>
+                <div id="player-list"></div>
+            </div>
+        </div>
+
+        <!-- Bottom: Simulation Input -->
+        <div class="panel" id="input-area">
+            <div id="chat-log">SYSTEM: Waiting for input...</div>
+            <input type="text" id="command-input" placeholder="> Enter command (e.g. !attack, !defend @user, sudo !attack)" autofocus>
+            <div style="font-size: 0.7em; margin-top: 5px;">*Simulate Twitch chat here. Try: !attack, !defend, !rm -rf</div>
+        </div>
+    </div>
+
+    <script src="main.ts" defer></script>
+</body>
+</html>

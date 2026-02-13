@@ -1,0 +1,157 @@
+:root {
+    --bg-color: #050505;
+    --term-green: #00ff41;
+    --term-dim: #008f11;
+    --alert-red: #ff3333;
+    --shield-blue: #00ccff;
+    --glitch-color: #ff00ff;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--term-green);
+    font-family: 'Courier New', Courier, monospace;
+    margin: 0;
+    padding: 20px;
+    height: 100vh;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-shadow: 0 0 5px var(--term-dim);
+}
+
+/* Layout */
+#game-container {
+    display: grid;
+    grid-template-rows: 60px 1fr 150px;
+    gap: 10px;
+    height: 100%;
+}
+
+/* Header / Hops */
+#top-bar {
+    border-bottom: 2px solid var(--term-green);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
+/* Main Area */
+#main-stage {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr; /* Enemies | Buffer | Players */
+    gap: 20px;
+    border: 1px solid var(--term-dim);
+    padding: 10px;
+}
+
+.panel {
+    border: 1px dashed var(--term-dim);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-title {
+    text-align: center;
+    border-bottom: 1px solid var(--term-dim);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+/* Buffer Slots */
+.slot {
+    border: 1px solid var(--term-dim);
+    margin: 5px 0;
+    padding: 10px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(0, 20, 0, 0.5);
+    transition: all 0.2s;
+}
+
+.slot.attack { border-color: var(--alert-red); color: var(--alert-red); }
+.slot.defense { border-color: var(--shield-blue); color: var(--shield-blue); }
+
+.slot.filled {
+    background: rgba(0, 255, 65, 0.1);
+    font-weight: bold;
+}
+
+/* Entities */
+.entity {
+    margin-bottom: 10px;
+    padding: 5px;
+    border: 1px solid transparent;
+}
+
+.hp-bar {
+    height: 5px;
+    background: #333;
+    margin-top: 5px;
+    position: relative;
+}
+.hp-fill {
+    height: 100%;
+    background: var(--term-green);
+    transition: width 0.3s;
+}
+.latency-bar {
+    height: 3px;
+    background: #220000;
+    margin-top: 2px;
+}
+.latency-fill {
+    height: 100%;
+    background: orange;
+}
+
+/* Glitch States */
+.blackout {
+    color: #555;
+    border: 1px solid var(--alert-red);
+    text-decoration: line-through;
+    opacity: 0.5;
+}
+
+/* Chat Input Simulation */
+#input-area {
+    display: flex;
+    flex-direction: column;
+}
+#chat-log {
+    flex: 1;
+    overflow-y: auto;
+    font-size: 0.8em;
+    color: #888;
+}
+#command-input {
+    background: #111;
+    border: 1px solid var(--term-green);
+    color: var(--term-green);
+    padding: 10px;
+    font-family: inherit;
+    width: 98%;
+}
+
+/* Progress Bars */
+.progress-container {
+    display: flex; 
+    gap: 10px;
+}
+.node-step { opacity: 0.3; }
+.node-step.active { opacity: 1; text-shadow: 0 0 10px var(--term-green); }
+
+/* Animations */
+@keyframes flash-red {
+    0% { background-color: transparent; }
+    50% { background-color: rgba(255, 0, 0, 0.2); }
+    100% { background-color: transparent; }
+}
+.overflow-trigger {
+    animation: flash-red 0.5s ease-out;
+}
