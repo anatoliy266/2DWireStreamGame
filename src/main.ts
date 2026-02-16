@@ -9,9 +9,9 @@ client.on("Raw.ActionCompleted", async (data: any) => {
   if (!data.data || !data.data.arguments) return;
 
   const args = data.data.arguments;
-  const commandName = args.commandName as string; 
+  const commandName = args.commandName as string;
   const rawInput = (args.rawInput as string) || "";
-  
+
   const userId = data.data.user?.id;
   const userName = data.data.user?.name || "Anonymous";
 
@@ -19,15 +19,20 @@ client.on("Raw.ActionCompleted", async (data: any) => {
 
   // System
   if (commandName === "StartGame") {
-    if (!game.isGameRunning) game.startGame();
+    if (!game.isGameRunning) {
+      game.prepareGame();
+    }
     return;
   }
 
   // Determine Intent from Chat
+  ////////////////////////////////////////////////////////////////////
+  //переписать блок чтобы реагировал не на команды а на чат сообщения, условно чтобы типы писали линух подобные командыы а интерпретатор в пуле их парсил и комбинировал в комбухи
+  ////////////////////////////////////////////////////////////////////
   let intent = "";
   if (commandName === "Attack") intent = "attack";
   else if (commandName === "Def") intent = "defend";
-  
+
   // Modifiers
   let fullCommand = intent;
   if (rawInput.includes("sudo")) fullCommand = "sudo " + intent;
@@ -37,6 +42,15 @@ client.on("Raw.ActionCompleted", async (data: any) => {
   }
 });
 
+client.on("Twitch.ChatMessage", async (data: any) => {
+  console.log(data);
+  if (game.isPrepStage) {
+    const userId = data.data.user?.id;
+    const userName = data.data.user?.name || "Anonymous";
+    game.addPlayer(userId, userName, );
+  }
+  return;
+});
 // For testing purposes: Mock connection
 // client.connect(); 
 
@@ -44,5 +58,5 @@ client.on("Raw.ActionCompleted", async (data: any) => {
 // Add global functions to window so we can button mash in console or via temp buttons
 (window as any).debugGame = game;
 (window as any).mockChat = (name: string, cmd: string) => {
-    game.handleInput(name, name, cmd, {});
+  game.handleInput(name, name, cmd, {});
 };

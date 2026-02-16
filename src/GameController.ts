@@ -2,8 +2,10 @@
 import { Player, Enemy, BufferSlot, CommandType } from './Types';
 
 export class GameController {
+
     public isGameRunning: boolean = false;
-    
+    public isPrepStage: boolean = false;
+
     // State
     private players: Map<string, Player> = new Map();
     private enemies: Enemy[] = [];
@@ -16,7 +18,8 @@ export class GameController {
 
     private timerInterval: any = null; // Хранит ID интервала
     private isTimerRunning: boolean = false;
-    
+
+
 
     constructor() {
         this.resetBuffer();
@@ -24,10 +27,43 @@ export class GameController {
 
     // --- INITIALIZATION ---
 
+    public prepareGame() {
+        this.showIntro();
+        this.isGameRunning = true;
+        this.isPrepStage = true;
+        setInterval(() => {
+            this.isPrepStage = false;
+            if (this.players.size == 0) return;
+            this.hideIntro();
+            this.startGame();
+        }, 30000);
+
+        this.log("SYSTEM", "INFILTRATION STARTED. HOP 1 REACHED.");
+    }
+    showIntro() {
+        return;
+    }
+
+    hideIntro() {
+        return;
+    }
+
+    addPlayer(userId: any, userName: any) {
+        let player = this.players.get(userId);
+        if (!player) {
+            player = { id: userId, name: userName, integrity: 100, latency: 0, state: 'active', blackoutTimer: 0 };
+            this.players.set(userId, player);
+        }
+        //////////////////////////////////
+        //добавить видуальное отображение подключения чувака к игре через консольку в рандомном месте на экране(подобрать попроще чтоб не на поллица)
+        //////////////////////////////////
+    }
+
     public startGame() {
         this.isGameRunning = true;
         this.drawInterface();
         this.currentHop = 1;
+        this.drawHopsLvl();
         this.spawnEnemies();
         this.startTurn();
         this.log("SYSTEM", "INFILTRATION STARTED. HOP 1 REACHED.");
@@ -37,14 +73,14 @@ export class GameController {
         this.enemies = [];
         // Simple logic: 1-3 enemies based on Hop
         const count = this.currentHop === 4 ? 1 : Math.min(3, Math.ceil(Math.random() * 3));
-        
+
         for (let i = 0; i < count; i++) {
             this.enemies.push({
                 id: `mob_${Date.now()}_${i}`,
                 name: this.currentHop === 4 ? "LEGACY_MAINFRAME" : `DAEMON_v${this.currentHop}.${i}`,
-                hp: 100,
-                maxHp: 100,
-                slotIndex: i // Maps to A1, A2, A3
+                integrity: 100,
+                slotIndex: i, // Maps to A1, A2, A3
+                latency: 200
             });
         }
         this.renderEnemies();
@@ -67,7 +103,7 @@ export class GameController {
         this.timerInterval = setInterval(() => {
             this.turnTimer--;
             this.updateTimerUI();
-            
+
             if (this.turnTimer <= 0) {
                 this.stopTimer(); // Важно остановить таймер перед выполнением логики
                 this.resolveTurn();
@@ -87,7 +123,7 @@ export class GameController {
         // --- Подготовка нового хода ---
         this.resetBuffer();
         this.assignDefenseTargets();
-        
+
         // --- Сброс и запуск времени ---
         this.stopTimer(); // На всякий случай очищаем предыдущий
         this.turnTimer = 15;
@@ -107,7 +143,7 @@ export class GameController {
         const activeIds = Array.from(this.players.values())
             .filter(p => p.state !== 'terminated')
             .map(p => p.id);
-        
+
         // Shuffle and pick 4
         const shuffled = activeIds.sort(() => 0.5 - Math.random());
         this.assignedDefensePlayers = [
@@ -173,7 +209,7 @@ export class GameController {
         // Greedy Algorithm: Fill A1 to X4, then A2, then A3
         for (let i = 0; i < 3; i++) {
             const slot = this.attackSlots[i];
-            
+
             // Only route to slots that have valid enemies
             if (!this.enemies.find(e => e.slotIndex === i)) continue;
 
@@ -181,11 +217,11 @@ export class GameController {
                 slot.level++;
                 slot.type = 'attack';
                 slot.contributors.push(player.name);
-                this.log("SYNERGY", `> ATTACK ROUTED TO A${i+1} [X${slot.level}] by ${player.name}`);
-                return; 
+                this.log("SYNERGY", `> ATTACK ROUTED TO A${i + 1} [X${slot.level}] by ${player.name}`);
+                return;
             }
         }
-        
+
         // Overflow if all full
         this.triggerOverflow(player);
     }
@@ -199,7 +235,7 @@ export class GameController {
         for (let i = 0; i < 4; i++) {
             const targetId = this.assignedDefensePlayers[i];
             if (!targetId) continue;
-            
+
             const target = this.players.get(targetId);
             if (!target) continue;
 
@@ -213,12 +249,12 @@ export class GameController {
 
         // If everyone is "Safe" (X2), fill linearly to X4
         if (targetSlotIndex === -1) {
-             for (let i = 0; i < 4; i++) {
+            for (let i = 0; i < 4; i++) {
                 if (this.assignedDefensePlayers[i] && this.defenseSlots[i].level < 4) {
                     targetSlotIndex = i;
                     break;
                 }
-             }
+            }
         }
 
         if (targetSlotIndex !== -1) {
@@ -226,7 +262,7 @@ export class GameController {
             slot.level++;
             slot.type = 'defend';
             slot.contributors.push(player.name);
-            this.log("SYNERGY", `> DEFENSE ROUTED TO D${targetSlotIndex+1} [X${slot.level}]`);
+            this.log("SYNERGY", `> DEFENSE ROUTED TO D${targetSlotIndex + 1} [X${slot.level}]`);
         } else {
             this.triggerOverflow(player);
         }
@@ -254,8 +290,8 @@ export class GameController {
                     // X1=10, X2=15, X3=20, X4=26 (approx based on multiplier)
                     const multipliers = [0, 1.0, 1.5, 2.0, 2.6];
                     const dmg = 100 * multipliers[slot.level]; //вернуть на 10!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 100 это тесты
-                    enemy.hp -= dmg;
-                    this.log("SYSTEM", `> SLOT A${index+1} HITS ${enemy.name} FOR ${dmg} DMG`);
+                    enemy.integrity -= dmg;
+                    this.log("SYSTEM", `> SLOT A${index + 1} HITS ${enemy.name} FOR ${dmg} DMG`);
                 }
             }
         });
@@ -269,7 +305,7 @@ export class GameController {
             const defSlot = this.defenseSlots[index];
             // Boss Damage (Mock value 30)
             let damage = 30;
-            
+
             // Mitigation
             const multipliers = [0, 10, 20, 30, 40]; // Mitigation amount
             damage -= multipliers[defSlot.level];
@@ -277,7 +313,7 @@ export class GameController {
 
             if (damage > 0) {
                 player.integrity -= damage;
-                this.log("SYSTEM", `> ${player.name} TOOK ${damage} DAMAGE (Slot D${index+1})`);
+                this.log("SYSTEM", `> ${player.name} TOOK ${damage} DAMAGE (Slot D${index + 1})`);
             } else {
                 this.log("SYNERGY", `> ${player.name} FULLY SHIELDED`);
             }
@@ -290,8 +326,8 @@ export class GameController {
         });
 
         // 3. Cleanup & Cooldown
-        this.enemies = this.enemies.filter(e => e.hp > 0);
-        
+        this.enemies = this.enemies.filter(e => e.integrity > 0);
+
 
         // --- количество игроков оставшихся в живых ---
         const activePlayersCount = Array.from(this.players.values())
@@ -361,32 +397,44 @@ export class GameController {
             list.scrollTop = list.scrollHeight;
         }
     }
-
+    ///////////////////////////////////////////////////////////////////
     private updateUI() {
         this.renderEnemies();
         this.renderBuffer();
         this.renderPlayers();
     }
-    drawHopsLvl(){
-        const el = document.getElementById(`hop-${this.currentHop}`);
-        el?.classList.add("active");
+    drawHopsLvl() {
+        const elements = document.querySelectorAll<HTMLElement>('.hop');
+        elements.forEach(el => {
+            if (el.id == `hop-${this.currentHop}`) {
+                el?.classList.add("active");
+            } else {
+                if (el.classList.contains("active")) el.classList.remove("active");
+            }
+        });
     }
 
 
     drawInterface() {
         const el = document.getElementById("general-store");
+        const svg = document.getElementById("circuit-svg");
         el?.classList.remove("element-out");
+        svg?.classList.remove("element-out");
         el?.classList.add("element-in");
+        svg?.classList.add("element-in");
     }
     cleanInterface() {
         const el = document.getElementById("general-store");
+        const svg = document.getElementById("circuit-svg");
         el?.classList.remove("element-in");
+        svg?.classList.remove("element-in");
         el?.classList.add("element-out");
+        svg?.classList.add("element-out");
     }
-    
+
     private updateTimerUI() {
         const el = document.getElementById("timer-display");
-        if(el) el.innerText = this.turnTimer.toString();
+        if (el) el.innerText = this.turnTimer.toString();
     }
 
     private renderEnemies() {
@@ -397,9 +445,9 @@ export class GameController {
             const div = document.createElement("div");
             div.className = "enemy-slot";
             div.innerHTML = `
-                <div>[!] ${e.name}</div>
+                <div style="display:flex; justify-content:space-between;"><span>[!] ${e.name}</span><span>${e.integrity}</span><span>${e.latency}%</span></div>
                 <div style="font-size:0.8em">LINKED: A${e.slotIndex + 1}</div>
-                <div class="bar-container"><div class="hp-bar" style="width:${(e.hp/e.maxHp)*100}%; background:red;"></div></div>
+                <div class="bar-container"><div class="hp-bar" style="width:${(e.integrity)}%; background:red;"></div></div>
             `;
             container.appendChild(div);
         });
@@ -408,25 +456,25 @@ export class GameController {
     private renderBuffer() {
         // Attack Slots
         this.attackSlots.forEach((slot, i) => {
-            const el = document.getElementById(`slot-a${i+1}`);
+            const el = document.getElementById(`slot-a${i + 1}`);
             if (el) {
                 el.className = `slot filled-${slot.level}`;
-                el.innerText = `[A${i+1}] ${slot.level > 0 ? `ATTACK X${slot.level}` : "EMPTY"}`;
+                el.innerText = `[A${i + 1}] ${slot.level > 0 ? `ATTACK X${slot.level}` : "EMPTY"}`;
             }
         });
 
         // Defense Slots
         this.defenseSlots.forEach((slot, i) => {
-            const el = document.getElementById(`slot-d${i+1}`);
+            const el = document.getElementById(`slot-d${i + 1}`);
             if (el) {
                 const targetId = this.assignedDefensePlayers[i];
                 const targetName = targetId ? (this.players.get(targetId)?.name || "???") : "NONE";
-                
+
                 el.className = `slot defense-slot filled-${slot.level}`;
                 if (slot.level === 0) el.classList.add("danger");
-                
+
                 el.innerHTML = `
-                    <span>[D${i+1}] ${targetName}</span>
+                    <span>[D${i + 1}] ${targetName}</span>
                     <span>${slot.level > 0 ? `SHIELD X${slot.level}` : "VULNERABLE"}</span>
                 `;
             }
@@ -436,30 +484,33 @@ export class GameController {
     private renderPlayers() {
         const list = document.getElementById("player-list");
         if (!list) return;
-        
+
         // Sort: Active first, then by Latency
-        const sorted = Array.from(this.players.values()).sort((a,b) => b.integrity - a.integrity);
+        const sorted = Array.from(this.players.values()).sort((a, b) => b.integrity - a.integrity);
 
         list.innerHTML = "";
         sorted.forEach(p => {
             const div = document.createElement("div");
             div.className = `player-card ${p.state}`;
-            
+
             let status = p.state === 'active' ? '' : `[${p.state.toUpperCase()}]`;
-            
+
             div.innerHTML = `
                 <div style="display:flex; justify-content:space-between;">
                     <span>${p.name} ${status}</span>
                     <span>${p.latency}ms</span>
+                    <span>${p.integrity}%</span>
                 </div>
-                <div class="bar-container">
-                    <div class="hp-bar" style="width:${p.integrity}%"></div>
-                </div>
-                <div class="bar-container" style="margin-top:1px;">
-                     <div class="lat-bar" style="width:${Math.min(100, p.latency/2)}%"></div>
-                </div>
+                
             `;
             list.appendChild(div);
         });
     }
 }
+
+// <div class="bar-container">
+//                     <div class="hp-bar" style="width:${p.integrity}%"></div>
+//                 </div>
+//                 <div class="bar-container" style="margin-top:1px;">
+//                      <div class="lat-bar" style="width:${Math.min(100, p.latency/2)}%"></div>
+//                 </div>

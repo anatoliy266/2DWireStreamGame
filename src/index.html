@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,7 +11,8 @@
             --term-green: #0f0;
             --term-bg: rgba(0, 5, 0, 0.95);
             --alert-red: #ff3333;
-            --trace-color: #0f0; /* Цвет дорожек как у рамки */
+            --trace-color: #0f0;
+            /* Цвет дорожек как у рамки */
         }
 
         body {
@@ -31,7 +33,10 @@
         /* SVG LAYER (Bottom) */
         #circuit-svg {
             position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             z-index: 0;
             pointer-events: none;
             filter: drop-shadow(0 0 2px var(--term-green));
@@ -45,10 +50,10 @@
             display: grid;
             /*  ENEMIES | ATTACK | CENTER | DEFENSE | PLAYERS */
             grid-template-columns: 350px 1fr 400px 1fr 350px;
-            grid-template-rows: 30px 1fr;
+            grid-template-rows: 50px 1fr;
             gap: 20px;
             padding: 15px;
-            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
             position: relative;
             z-index: 1;
         }
@@ -73,49 +78,95 @@
         }
 
         .scroll-list {
-            flex-grow: 1; overflow-y: auto; padding: 5px; min-height: 0;
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 5px;
+            min-height: 0;
         }
-        
+
         /* Custom Scrollbar */
-        *::-webkit-scrollbar { width: 4px; }
-        *::-webkit-scrollbar-track { background: #001100; }
-        *::-webkit-scrollbar-thumb { background: var(--term-green); }
+        *::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        *::-webkit-scrollbar-track {
+            background: #001100;
+        }
+
+        *::-webkit-scrollbar-thumb {
+            background: var(--term-green);
+        }
 
         /* --- TOP BAR --- */
         .top-bar {
             grid-column: 1 / -1;
+            grid-row: 1 / 2;
             display: flex;
             justify-content: center;
             gap: 30px;
             align-items: center;
             border-bottom: 2px solid #002200;
         }
-        .hop { opacity: 0.4; }
-        .hop.active { opacity: 1; color: #fff; text-shadow: 0 0 10px var(--term-green); font-weight: bold; }
+
+        .hop-space {
+            height: 50px;
+            border: 2px solid var(--term-green);
+            background: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2em;
+            font-weight: bold;
+        }
+
+        .hop {
+            opacity: 0.4;
+        }
+
+        .hop.active {
+            opacity: 1;
+            color: #fff;
+            text-shadow: 0 0 10px var(--term-green);
+            font-weight: bold;
+        }
 
         /* --- COLUMNS --- */
-        .left-info-col { grid-column: 1 / 2; grid-row: 2 / 3; }
-        .right-info-col { grid-column: 5 / 6; grid-row: 2 / 3; }
+        .left-info-col {
+            grid-column: 1 / 2;
+            grid-row: 2 / 3;
+        }
+
+        .right-info-col {
+            grid-column: 5 / 6;
+            grid-row: 2 / 3;
+        }
 
         /* SLOTS COLUMNS (Flex Column for easy spacing) */
         .slots-col-attack {
-            grid-column: 2 / 3; grid-row: 2 / 3;
-            display: flex; flex-direction: column;
-            justify-content: space-evenly; /* Равномерное распределение */
+            grid-column: 2 / 3;
+            grid-row: 2 / 3;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-evenly;
+            /* Равномерное распределение */
             align-items: center;
         }
 
         .slots-col-defense {
-            grid-column: 4 / 5; grid-row: 2 / 3;
-            display: flex; flex-direction: column;
+            grid-column: 4 / 5;
+            grid-row: 2 / 3;
+            display: flex;
+            flex-direction: column;
             justify-content: space-evenly;
             align-items: center;
         }
 
         /* --- FLAT RECTANGULAR SLOT --- */
         .slot-chip {
-            width: 160px;  /* Широкий */
-            height: 45px;  /* Плоский */
+            width: 160px;
+            /* Широкий */
+            height: 45px;
+            /* Плоский */
             background: rgba(0, 15, 0, 1);
             border: 1px solid var(--term-green);
             display: flex;
@@ -123,26 +174,43 @@
             justify-content: center;
             padding-left: 10px;
             position: relative;
-            box-shadow: 0 0 5px rgba(0,0,0,0.8);
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
             z-index: 10;
         }
 
         .slot-header {
-            display: flex; justify-content: space-between; padding-right: 5px;
-            border-bottom: 1px solid #003300; margin-bottom: 2px;
+            display: flex;
+            justify-content: space-between;
+            padding-right: 5px;
+            border-bottom: 1px solid #003300;
+            margin-bottom: 2px;
         }
-        .slot-id { font-weight: bold; color: #fff; font-size: 0.9em; }
-        .slot-status { font-size: 0.7em; opacity: 0.7; }
-        
+
+        .slot-id {
+            font-weight: bold;
+            color: #fff;
+            font-size: 0.9em;
+        }
+
+        .slot-status {
+            font-size: 0.7em;
+            opacity: 0.7;
+        }
+
         .slot-cmd {
-            font-size: 0.8em; color: var(--term-green);
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            font-size: 0.8em;
+            color: var(--term-green);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         /* --- CENTER CORE --- */
         .center-col {
-            grid-column: 3 / 4; grid-row: 2 / 3;
-            display: flex; flex-direction: column;
+            grid-column: 3 / 4;
+            grid-row: 2 / 3;
+            display: flex;
+            flex-direction: column;
             gap: 10px;
             z-index: 5;
         }
@@ -151,29 +219,72 @@
             height: 50px;
             border: 2px solid var(--term-green);
             background: black;
-            display: flex; justify-content: center; align-items: center;
-            font-size: 2em; font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2em;
+            font-weight: bold;
         }
 
         .synergy-pool {
             flex-grow: 1;
-            border: 2px solid var(--term-green); /* Толстая рамка */
+            border: 2px solid var(--term-green);
+            /* Толстая рамка */
             background: rgba(0, 20, 0, 0.9);
             position: relative;
-            display: flex; flex-direction: column;
+            display: flex;
+            flex-direction: column;
         }
 
         .pool-header-label {
-            background: var(--term-green); color: black;
-            font-size: 0.7em; text-align: center; font-weight: bold;
+            background: var(--term-green);
+            color: black;
+            font-size: 0.7em;
+            text-align: center;
+            font-weight: bold;
         }
 
+        /* для поячвления в начале игры и исчезновения в конце */
+        .element-in {
+            animation: fadeIn 0.4s ease forwards;
+        }
+
+        /* Класс для плавного исчезновения */
+        .element-out {
+            animation: fadeOut 0.4s ease forwards;
+            pointer-events: none;
+            /* Чтобы нельзя было кликнуть по исчезающему элементу */
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            to {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+        }
     </style>
 </head>
 
 <body>
     <!-- SVG LAYER -->
-    <svg id="circuit-svg">
+    <svg id="circuit-svg" class="element-out">
         <defs>
             <marker id="dot" markerWidth="4" markerHeight="4" refX="2" refY="2">
                 <circle cx="2" cy="2" r="2" fill="#0f0" />
@@ -184,11 +295,15 @@
         <g id="connectors" fill="var(--term-bg)" stroke="var(--term-green)" stroke-width="1"></g>
     </svg>
 
-    <div class="grid-container">
-        
+    <div id="general-store" class="grid-container element-out">
+
         <!-- TOP -->
-        <div class="top-bar">
-            <div id="hop-1" class="hop active">HOP 1</div>
+        <div class="top-bar hop-space">
+            <div id="hop-1" class="hop">HOP 1</div>
+            <div>&gt;</div>
+            <div id="hop-2" class="hop">HOP 2</div>
+            <div>&gt;</div>
+            <div id="hop-3" class="hop">HOP 3</div>
             <div>&gt;</div>
             <div id="hop-final" class="hop">CORE</div>
         </div>
@@ -270,7 +385,7 @@
             const attackPinSpacing = 10;
             // Разъем находится внизу слева пула
             const attackConnHeight = (attackIds.length * attackPinSpacing) + 10;
-            const attackConnX = pool.left - 10; 
+            const attackConnX = pool.left - 10;
             const attackConnY = pool.bottom - attackConnHeight - 20; // 20px от низа
 
             // Рисуем коннектор Атаки (прямоугольник)
@@ -293,9 +408,9 @@
                 // 2. Line from Slot to Pool Connector (Right side of slot)
                 const outX = rect.right;
                 const outY = rect.top + (rect.height / 2); // Середина слота
-                
+
                 // Целевая точка на коннекторе (пины идут сверху вниз)
-                const targetX = attackConnX; 
+                const targetX = attackConnX;
                 const targetY = attackConnY + 10 + (index * attackPinSpacing);
 
                 // Рисуем линию "Шлейфом" (сначала вправо, потом вниз/вверх, потом вправо)
@@ -313,7 +428,7 @@
             const defenseIds = ['slot-d1', 'slot-d2', 'slot-d3', 'slot-d4'];
             const defPinSpacing = 10;
             const defConnHeight = (defenseIds.length * defPinSpacing) + 10;
-            const defConnX = pool.right; 
+            const defConnX = pool.right;
             const defConnY = pool.bottom - defConnHeight - 20;
 
             // Рисуем коннектор Защиты
@@ -363,4 +478,5 @@
     </script>
     <script src="main.ts" defer></script>
 </body>
+
 </html>

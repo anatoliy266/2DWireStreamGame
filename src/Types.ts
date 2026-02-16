@@ -12,8 +12,8 @@ export interface Player {
 export interface Enemy {
     id: string;
     name: string;
-    hp: number;
-    maxHp: number;
+    integrity: number;
+    latency: number;   // 0-200 (Ping)
     slotIndex: number; // 0, 1, 2 corresponds to A1, A2, A3
 }
 
