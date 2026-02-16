@@ -1,63 +1,48 @@
 import { StreamerbotClient } from "@streamerbot/client";
 import { GameController } from "./GameController";
 
-// Инициализация
-const client = new StreamerbotClient();
 const game = new GameController();
+const client = new StreamerbotClient();
 
-// Подключаемся
-client.on("Raw.ActionCompleted", async (data) => {
+// --- STREAMER.BOT INTEGRATION ---
+client.on("Raw.ActionCompleted", async (data: any) => {
   if (!data.data || !data.data.arguments) return;
 
   const args = data.data.arguments;
-  const commandName = args.commandName as string; // Название экшена в Streamer.bot
-  const rawInput = args.rawInput as string || ""; // Текст сообщения (если есть)
-
-  // Получаем пользователя
+  const commandName = args.commandName as string; 
+  const rawInput = (args.rawInput as string) || "";
+  
   const userId = data.data.user?.id;
   const userName = data.data.user?.name || "Anonymous";
 
   if (!userId) return;
 
-  // --- СИСТЕМНЫЕ КОМАНДЫ ---
+  // System
   if (commandName === "StartGame") {
-    if (!game.isGameRunning) {
-      game.startGame();
-    }
+    if (!game.isGameRunning) game.startGame();
     return;
   }
 
-  // --- ИГРОВЫЕ КОМАНДЫ ---
-  // В Streamer.bot нужно создать Action "DPI_Input" и привязать к командам !attack, !defend и т.д.
-  // Либо передавать саму команду через аргумент.
-
-  // Вариант: Все команды летят в один Action, мы парсим rawInput или commandName
-
+  // Determine Intent from Chat
   let intent = "";
-
-  // Нормализация команд согласно GDD
-  if (commandName === "Attack" || rawInput.startsWith("!attack")) {
-    intent = "attack";
-  }
-  else if (commandName === "Defend" || rawInput.startsWith("!defend")) {
-    intent = "defend";
-  }
-  else if (rawInput.includes("!rm -rf")) {
-    intent = "finisher_attack";
-  }
-  else if (rawInput.includes("!sys_lock")) {
-    intent = "finisher_defend";
-  }
-
-  // Проверка префиксов (sudo, ping)
+  if (commandName === "Attack") intent = "attack";
+  else if (commandName === "Def") intent = "defend";
+  
+  // Modifiers
   let fullCommand = intent;
   if (rawInput.includes("sudo")) fullCommand = "sudo " + intent;
-  else if (rawInput.includes("ping")) fullCommand = "ping " + intent;
 
   if (intent) {
     game.handleInput(userId.toString(), userName, fullCommand, args);
   }
 });
 
-// Запуск клиента
-// client.connect(); // Вызывать в основном файле
+// For testing purposes: Mock connection
+// client.connect(); 
+
+// --- MANUAL DEBUG CONTROLS (For Browser Testing without Twitch) ---
+// Add global functions to window so we can button mash in console or via temp buttons
+(window as any).debugGame = game;
+(window as any).mockChat = (name: string, cmd: string) => {
+    game.handleInput(name, name, cmd, {});
+};

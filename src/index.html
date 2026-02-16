@@ -1,45 +1,366 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
-    <title>DPI // HUD OVERLAY</title>
-    <link rel="stylesheet" href="index.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PROJECT DPI: RIBBON SCHEMATIC</title>
+    <style>
+        /* --- CONFIG --- */
+        :root {
+            --term-green: #0f0;
+            --term-bg: rgba(0, 5, 0, 0.95);
+            --alert-red: #ff3333;
+            --trace-color: #0f0; /* Цвет дорожек как у рамки */
+        }
+
+        body {
+            background-color: transparent;
+            color: var(--term-green);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            text-transform: uppercase;
+            box-sizing: border-box;
+            font-size: 12px;
+            display: flex;
+            align-items: flex-end;
+        }
+
+        /* SVG LAYER (Bottom) */
+        #circuit-svg {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 0;
+            pointer-events: none;
+            filter: drop-shadow(0 0 2px var(--term-green));
+        }
+
+        /* --- MAIN LAYOUT --- */
+        .grid-container {
+            width: 100%;
+            height: 35vh;
+            min-height: 280px;
+            display: grid;
+            /*  ENEMIES | ATTACK | CENTER | DEFENSE | PLAYERS */
+            grid-template-columns: 350px 1fr 400px 1fr 350px;
+            grid-template-rows: 30px 1fr;
+            gap: 20px;
+            padding: 15px;
+            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+            position: relative;
+            z-index: 1;
+        }
+
+        /* --- PANELS --- */
+        .panel {
+            background: var(--term-bg);
+            border: 1px solid var(--term-green);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            z-index: 2;
+        }
+
+        .panel-header {
+            background: var(--term-green);
+            color: black;
+            font-weight: bold;
+            padding: 2px 5px;
+            font-size: 0.8em;
+        }
+
+        .scroll-list {
+            flex-grow: 1; overflow-y: auto; padding: 5px; min-height: 0;
+        }
+        
+        /* Custom Scrollbar */
+        *::-webkit-scrollbar { width: 4px; }
+        *::-webkit-scrollbar-track { background: #001100; }
+        *::-webkit-scrollbar-thumb { background: var(--term-green); }
+
+        /* --- TOP BAR --- */
+        .top-bar {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            align-items: center;
+            border-bottom: 2px solid #002200;
+        }
+        .hop { opacity: 0.4; }
+        .hop.active { opacity: 1; color: #fff; text-shadow: 0 0 10px var(--term-green); font-weight: bold; }
+
+        /* --- COLUMNS --- */
+        .left-info-col { grid-column: 1 / 2; grid-row: 2 / 3; }
+        .right-info-col { grid-column: 5 / 6; grid-row: 2 / 3; }
+
+        /* SLOTS COLUMNS (Flex Column for easy spacing) */
+        .slots-col-attack {
+            grid-column: 2 / 3; grid-row: 2 / 3;
+            display: flex; flex-direction: column;
+            justify-content: space-evenly; /* Равномерное распределение */
+            align-items: center;
+        }
+
+        .slots-col-defense {
+            grid-column: 4 / 5; grid-row: 2 / 3;
+            display: flex; flex-direction: column;
+            justify-content: space-evenly;
+            align-items: center;
+        }
+
+        /* --- FLAT RECTANGULAR SLOT --- */
+        .slot-chip {
+            width: 160px;  /* Широкий */
+            height: 45px;  /* Плоский */
+            background: rgba(0, 15, 0, 1);
+            border: 1px solid var(--term-green);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding-left: 10px;
+            position: relative;
+            box-shadow: 0 0 5px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+
+        .slot-header {
+            display: flex; justify-content: space-between; padding-right: 5px;
+            border-bottom: 1px solid #003300; margin-bottom: 2px;
+        }
+        .slot-id { font-weight: bold; color: #fff; font-size: 0.9em; }
+        .slot-status { font-size: 0.7em; opacity: 0.7; }
+        
+        .slot-cmd {
+            font-size: 0.8em; color: var(--term-green);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+
+        /* --- CENTER CORE --- */
+        .center-col {
+            grid-column: 3 / 4; grid-row: 2 / 3;
+            display: flex; flex-direction: column;
+            gap: 10px;
+            z-index: 5;
+        }
+
+        .timer-box {
+            height: 50px;
+            border: 2px solid var(--term-green);
+            background: black;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 2em; font-weight: bold;
+        }
+
+        .synergy-pool {
+            flex-grow: 1;
+            border: 2px solid var(--term-green); /* Толстая рамка */
+            background: rgba(0, 20, 0, 0.9);
+            position: relative;
+            display: flex; flex-direction: column;
+        }
+
+        .pool-header-label {
+            background: var(--term-green); color: black;
+            font-size: 0.7em; text-align: center; font-weight: bold;
+        }
+
+    </style>
 </head>
 
 <body>
-    <div id="game-overlay">
-        <div id="top-bar">
-            <div>[ NETWORK_TRACE: IN_PROGRESS ]</div>
-            <div id="hops-display"></div>
-            <div id="turn-timer">FLUSHING: 15S</div>
+    <!-- SVG LAYER -->
+    <svg id="circuit-svg">
+        <defs>
+            <marker id="dot" markerWidth="4" markerHeight="4" refX="2" refY="2">
+                <circle cx="2" cy="2" r="2" fill="#0f0" />
+            </marker>
+        </defs>
+        <!-- Groups for different visual elements -->
+        <g id="traces" stroke="var(--trace-color)" stroke-width="1.5" fill="none"></g>
+        <g id="connectors" fill="var(--term-bg)" stroke="var(--term-green)" stroke-width="1"></g>
+    </svg>
+
+    <div class="grid-container">
+        
+        <!-- TOP -->
+        <div class="top-bar">
+            <div id="hop-1" class="hop active">HOP 1</div>
+            <div>&gt;</div>
+            <div id="hop-final" class="hop">CORE</div>
         </div>
 
-        <div id="main-stage">
-            <!-- LEFT: ENEMY NODES -->
-            <div id="enemies-panel">
-                <div class="panel-label">DETECTED_THREATS</div>
-                <div id="enemy-list"></div>
-            </div>
+        <!-- 1. ENEMIES -->
+        <div class="panel left-info-col" id="panel-enemies">
+            <div class="panel-header">TARGETS</div>
+            <div id="enemy-container" class="scroll-list"></div>
+        </div>
 
-            <!-- CENTER: THE SMART ENGINE (BUFFER) -->
-            <div id="buffer-panel">
-                <div class="panel-label" style="text-align: center;">CENTRAL_BUFFER_ORCHESTRATOR</div>
-                <div id="attack-slots"></div>
-                <div style="height: 1px; background: var(--term-dim); margin: 5px 0;"></div>
-                <div id="defense-slots"></div>
+        <!-- 2. ATTACK SLOTS -->
+        <div class="slots-col-attack">
+            <div id="slot-a1" class="slot-chip">
+                <div class="slot-header"><span class="slot-id">A1</span><span class="slot-status">READY</span></div>
+                <div class="slot-cmd">[ EMPTY ]</div>
             </div>
-
-            <!-- RIGHT: RAID NODES -->
-            <div id="raid-panel">
-                <div class="panel-label">ACTIVE_NODES</div>
-                <div id="player-list"></div>
+            <div id="slot-a2" class="slot-chip">
+                <div class="slot-header"><span class="slot-id">A2</span><span class="slot-status">READY</span></div>
+                <div class="slot-cmd">[ EMPTY ]</div>
+            </div>
+            <div id="slot-a3" class="slot-chip">
+                <div class="slot-header"><span class="slot-id">A3</span><span class="slot-status">READY</span></div>
+                <div class="slot-cmd">[ EMPTY ]</div>
             </div>
         </div>
 
-        <div id="system-log"></div>
+        <!-- 3. CENTER -->
+        <div class="center-col">
+            <div class="timer-box">
+                <div id="timer-display">15</div>
+            </div>
+            <div class="synergy-pool" id="pool-box">
+                <div class="pool-header-label">SYNERGY_CORE</div>
+                <div id="synergy-log" class="scroll-list" style="text-align: center;"></div>
+            </div>
+        </div>
+
+        <!-- 4. DEFENSE SLOTS -->
+        <div class="slots-col-defense">
+            <div id="slot-d1" class="slot-chip defense-slot">
+                <div class="slot-header"><span class="slot-id">D1</span><span class="slot-status">...</span></div>
+                <div class="slot-cmd">[ WAITING ]</div>
+            </div>
+            <div id="slot-d2" class="slot-chip defense-slot">
+                <div class="slot-header"><span class="slot-id">D2</span><span class="slot-status">...</span></div>
+                <div class="slot-cmd">[ WAITING ]</div>
+            </div>
+            <div id="slot-d3" class="slot-chip defense-slot">
+                <div class="slot-header"><span class="slot-id">D3</span><span class="slot-status">...</span></div>
+                <div class="slot-cmd">[ WAITING ]</div>
+            </div>
+            <div id="slot-d4" class="slot-chip defense-slot">
+                <div class="slot-header"><span class="slot-id">D4</span><span class="slot-status">...</span></div>
+                <div class="slot-cmd">[ WAITING ]</div>
+            </div>
+        </div>
+
+        <!-- 5. PLAYERS -->
+        <div class="panel right-info-col" id="panel-players">
+            <div class="panel-header">SQUAD</div>
+            <div id="player-list" class="scroll-list"></div>
+        </div>
+
     </div>
+
+    <script>
+        function drawLines() {
+            const svgTraces = document.getElementById('traces');
+            const svgConnectors = document.getElementById('connectors');
+            svgTraces.innerHTML = '';
+            svgConnectors.innerHTML = '';
+
+            const pool = document.getElementById('pool-box').getBoundingClientRect();
+            const enemies = document.getElementById('panel-enemies').getBoundingClientRect();
+            const players = document.getElementById('panel-players').getBoundingClientRect();
+
+            // --- ATTACK SIDE (LEFT) ---
+            const attackIds = ['slot-a1', 'slot-a2', 'slot-a3'];
+            const attackPinSpacing = 10;
+            // Разъем находится внизу слева пула
+            const attackConnHeight = (attackIds.length * attackPinSpacing) + 10;
+            const attackConnX = pool.left - 10; 
+            const attackConnY = pool.bottom - attackConnHeight - 20; // 20px от низа
+
+            // Рисуем коннектор Атаки (прямоугольник)
+            const aConnRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            aConnRect.setAttribute("x", attackConnX);
+            aConnRect.setAttribute("y", attackConnY);
+            aConnRect.setAttribute("width", "10");
+            aConnRect.setAttribute("height", attackConnHeight);
+            svgConnectors.appendChild(aConnRect);
+
+            attackIds.forEach((id, index) => {
+                const el = document.getElementById(id);
+                const rect = el.getBoundingClientRect();
+
+                // 1. Line from Enemy Panel to Slot (Left side of slot)
+                const inY = rect.top + (rect.height / 2);
+                const p1 = `M ${enemies.right} ${inY} L ${rect.left} ${inY}`;
+                createPath(p1);
+
+                // 2. Line from Slot to Pool Connector (Right side of slot)
+                const outX = rect.right;
+                const outY = rect.top + (rect.height / 2); // Середина слота
+                
+                // Целевая точка на коннекторе (пины идут сверху вниз)
+                const targetX = attackConnX; 
+                const targetY = attackConnY + 10 + (index * attackPinSpacing);
+
+                // Рисуем линию "Шлейфом" (сначала вправо, потом вниз/вверх, потом вправо)
+                // Точка изгиба X: Середина между слотом и пулом
+                const midX = outX + 30; // Немного отступаем от слота
+
+                const d = `M ${outX} ${outY} 
+                           L ${midX} ${outY} 
+                           L ${midX} ${targetY} 
+                           L ${targetX} ${targetY}`;
+                createPath(d);
+            });
+
+            // --- DEFENSE SIDE (RIGHT) ---
+            const defenseIds = ['slot-d1', 'slot-d2', 'slot-d3', 'slot-d4'];
+            const defPinSpacing = 10;
+            const defConnHeight = (defenseIds.length * defPinSpacing) + 10;
+            const defConnX = pool.right; 
+            const defConnY = pool.bottom - defConnHeight - 20;
+
+            // Рисуем коннектор Защиты
+            const dConnRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            dConnRect.setAttribute("x", defConnX);
+            dConnRect.setAttribute("y", defConnY);
+            dConnRect.setAttribute("width", "10");
+            dConnRect.setAttribute("height", defConnHeight);
+            svgConnectors.appendChild(dConnRect);
+
+            defenseIds.forEach((id, index) => {
+                const el = document.getElementById(id);
+                const rect = el.getBoundingClientRect();
+
+                // 1. Line from Player Panel to Slot (Right side of slot)
+                const inY = rect.top + (rect.height / 2);
+                const p1 = `M ${players.left} ${inY} L ${rect.right} ${inY}`;
+                createPath(p1);
+
+                // 2. Line from Slot to Pool Connector (Left side of slot)
+                const outX = rect.left;
+                const outY = rect.top + (rect.height / 2);
+
+                const targetX = defConnX + 10; // Right side of connector
+                const targetY = defConnY + 10 + (index * defPinSpacing);
+
+                const midX = outX - 30;
+
+                const d = `M ${outX} ${outY} 
+                           L ${midX} ${outY} 
+                           L ${midX} ${targetY} 
+                           L ${targetX} ${targetY}`;
+                createPath(d);
+            });
+        }
+
+        function createPath(d) {
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute("d", d);
+            document.getElementById('traces').appendChild(path);
+        }
+
+        window.addEventListener('load', drawLines);
+        window.addEventListener('resize', drawLines);
+        // Задержка на всякий случай для верной отрисовки шрифтов
+        setTimeout(drawLines, 200);
+    </script>
     <script src="main.ts" defer></script>
 </body>
-
 </html>

@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PROJECT DPI: INFILTRATION OVERLAY</title>
+    <style>
+        /* --- CORE VISUALS --- */
+        :root {
+            --term-green: #0f0;
+            --term-dim: #004400;
+            --alert-red: #ff3333;
+            --warn-orange: #ffaa00;
+            --panel-bg: rgba(0, 10, 0, 0.9);
+        }
+
+        body {
+            background-color: transparent;
+            color: var(--term-green);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            text-transform: uppercase;
+            box-sizing: border-box;
+            text-shadow: 0 0 2px var(--term-green);
+            font-size: 12px;
+            display: flex;
+            align-items: flex-end;
+            /* Прижимаем к низу */
+        }
+
+        /* --- LAYOUT: BOTTOM STRIP --- */
+        .grid-container {
+            width: 100%;
+            height: 25vh;
+            /* Фиксированная высота (25% экрана) */
+            min-height: 200px;
+            /* Чтобы не сжималось слишком сильно */
+            max-height: 300px;
+            /* Чтобы не становилось слишком большим на 4k */
+
+            display: grid;
+            /* 4 колонки: Враги+Чат | Буфер | Игроки | Логи */
+            grid-template-columns: 400px 200px 1fr 200px 400px;
+            /* Строки: Заголовок (30px) | Контент (все остальное) */
+            grid-template-rows: 30px 1fr;
+            gap: 5px;
+            padding: 5px;
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.95), transparent);
+        }
+
+        /* Common Panel Style */
+        .panel {
+            border: 1px solid var(--term-green);
+            background: var(--panel-bg);
+            padding: 5px;
+            position: relative;
+            box-shadow: 0 0 5px var(--term-dim);
+
+            /* ВАЖНО: Flex позволяет нам управлять высотой дочерних элементов */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            /* Обрезаем всё, что вылезает за рамки панели */
+        }
+
+        .panel-header {
+            background: var(--term-green);
+            color: black;
+            padding: 2px 4px;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+            flex-shrink: 0;
+            /* Заголовок никогда не сжимается */
+        }
+
+        /* Скроллбары (Скрываем визуально, но оставляем функционал) */
+        *::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        *::-webkit-scrollbar-track {
+            background: #001100;
+        }
+
+        *::-webkit-scrollbar-thumb {
+            background: var(--term-green);
+        }
+
+        /* --- SECTION 1: TOP BAR (HOPS) --- */
+        .top-bar {
+            grid-column: 1 / -1;
+            grid-row: 1 / 2;
+            flex-direction: row;
+            /* Возвращаем строку для топа */
+            justify-content: space-around;
+            align-items: center;
+            border: none;
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--term-dim);
+        }
+
+        .hop {
+            opacity: 0.3;
+            transition: 0.3s;
+            font-size: 0.9em;
+        }
+
+        .hop.active {
+            opacity: 1;
+            text-shadow: 0 0 10px var(--term-green);
+            font-weight: bold;
+            color: #fff;
+        }
+
+        /* --- SECTION 2: LEFT (ENEMIES & POOL) --- */
+        .left-col {
+            grid-column: 1 / 2;
+            grid-row: 2 / 3;
+        }
+
+        #enemy-container {
+            flex-shrink: 0;
+            /* Враги не сжимаются */
+            margin-bottom: 5px;
+        }
+
+        .pool-list {
+            font-size: 0.75em;
+            opacity: 0.7;
+            /* ВАЖНО: */
+            flex-grow: 1;
+            /* Занимает всё оставшееся место */
+            overflow-y: auto;
+            /* Включает скролл, если текста много */
+            min-height: 0;
+            /* Разрешает сжатие flex-элемента (фикс для Firefox/Chrome) */
+            border-top: 1px dashed var(--term-dim);
+            padding-top: 5px;
+        }
+
+        .enemy-slot {
+            margin-bottom: 2px;
+            border-left: 3px solid var(--alert-red);
+            padding-left: 5px;
+            font-size: 0.8em;
+        }
+
+        /* --- SECTION 3: CENTER (BUFFER) --- */
+        .left-center-col {
+            grid-column: 2 / 3;
+            grid-row: 2 / 3;
+            background: transparent;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .center-col {
+            grid-column: 3 / 4;
+            grid-row: 2 / 3;
+            background: transparent;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .right-center-col {
+            grid-column: 4 / 5;
+            grid-row: 2 / 3;
+            background: transparent;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .buffer-visual {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            height: 100%;
+            align-items: center;
+        }
+
+        .slot-group {
+            width: 35%;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .slot {
+            border: 1px solid var(--term-green);
+            padding: 4px;
+            display: flex;
+            justify-content: space-between;
+            background: rgba(0, 20, 0, 0.9);
+            font-size: 0.85em;
+        }
+
+        .slot.filled-1 {
+            background: rgba(0, 255, 0, 0.2);
+        }
+
+        .slot.filled-2 {
+            background: rgba(0, 255, 0, 0.4);
+        }
+
+        .slot.filled-3 {
+            background: rgba(0, 255, 0, 0.6);
+        }
+
+        .slot.filled-4 {
+            background: var(--term-green);
+            color: black;
+            font-weight: bold;
+        }
+
+        .defense-slot.danger {
+            border-color: var(--alert-red);
+            color: var(--alert-red);
+        }
+
+        .core-visual {
+            border: 2px double var(--term-green);
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            margin: 0 10px;
+            background: black;
+            box-shadow: 0 0 10px var(--term-green);
+        }
+
+        /* --- SECTION 4: RIGHT (PLAYERS) --- */
+        .right-col {
+            grid-column: 5 / 6;
+            grid-row: 2 / 3;
+        }
+
+        #player-list {
+            /* ВАЖНО: */
+            flex-grow: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        .player-card {
+            border-bottom: 1px solid #004400;
+            padding: 2px 0;
+            font-size: 0.85em;
+        }
+
+        .player-card.terminated {
+            color: var(--alert-red);
+        }
+
+        .bar-container {
+            height: 3px;
+            background: #333;
+            margin-top: 1px;
+            display: flex;
+        }
+
+        .hp-bar {
+            background: var(--term-green);
+            height: 100%;
+        }
+
+        .lat-bar {
+            background: var(--warn-orange);
+            height: 100%;
+        }
+
+        /* --- SECTION 5: LOGS --- */
+        .logs-col {
+            grid-column: 4 / 5;
+            grid-row: 2 / 3;
+            /* Убираем display: grid здесь, используем Flex для контроля высоты */
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            border: none;
+            background: transparent;
+            box-shadow: none;
+            overflow: hidden;
+            /* Чтобы не вылезало за пределы грида */
+        }
+
+        .log-box {
+            font-size: 0.7em;
+            border: 1px dashed var(--term-dim);
+            background: var(--panel-bg);
+            padding: 5px;
+            /* ВАЖНО: Делим высоту пополам */
+            flex: 1;
+            /* Занимает 50% высоты каждая */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .log-content {
+            flex-grow: 1;
+            overflow-y: auto;
+            /* Скролл внутри лога */
+            min-height: 0;
+        }
+
+        /* для поячвления в начале игры и исчезновения в конце */
+        .element-in {
+            animation: fadeIn 0.4s ease forwards;
+        }
+
+        /* Класс для плавного исчезновения */
+        .element-out {
+            animation: fadeOut 0.4s ease forwards;
+            pointer-events: none;
+            /* Чтобы нельзя было кликнуть по исчезающему элементу */
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            to {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="general-store" class="grid-container element-in">
+        <!-- TOP STRIP -->
+        <div class="top-bar panel">
+            <div id="hop-1" class="hop active">HOP 1</div>
+            <div>>></div>
+            <div id="hop-2" class="hop">HOP 2</div>
+            <div>>></div>
+            <div id="hop-3" class="hop">HOP 3</div>
+            <div>>></div>
+            <div id="hop-final" class="hop">CORE</div>
+        </div>
+
+        <!-- LEFT: ENEMIES + RAW POOL -->
+        <div class="left-col panel">
+            <div class="panel-header">TARGETS & POOL</div>
+            <div id="enemy-container"></div> <!-- Фиксированный размер -->
+            <div id="raw-pool" class="pool-list"></div> <!-- Скроллируемый список -->
+        </div>
+
+        <!-- CENTER: BUFFER -->
+        <div class="slot-group left-center-col panel buffer-space">
+            <div class="panel-header">ATTACK</div>
+            <div id="slot-a1" class="slot">EMPTY</div>
+            <div id="slot-a2" class="slot">EMPTY</div>
+            <div id="slot-a3" class="slot">EMPTY</div>
+        </div>
+
+        <div class="core-visual panel center-col">
+            <div>
+                <div id="timer-display">15</div>
+            </div>
+
+            <div><!--   class="core-visual" -->
+                <div id="timer-display">15</div>
+            </div>
+        </div>
+
+
+
+        <div class="slot-group right-center-col panel buffer-space">
+            <div class="panel-header">DEFENSE</div>
+            <div id="slot-d1" class="slot defense-slot">...</div>
+            <div id="slot-d2" class="slot defense-slot">...</div>
+            <div id="slot-d3" class="slot defense-slot">...</div>
+            <div id="slot-d4" class="slot defense-slot">...</div>
+        </div>
+
+        <!-- <div class="buffer-space">
+            <div class="buffer-visual">
+                
+            </div>
+        </div> -->
+
+        <!-- RIGHT: PLAYERS -->
+        <div class="right-col panel">
+            <div class="panel-header">SQUAD NODES</div>
+            <div id="player-list"></div> <!-- Скроллируемый список -->
+        </div>
+
+        <!-- FAR RIGHT: LOGS
+        <div class="logs-col">
+            <div class="log-box">
+                <div class="panel-header">SYNERGY</div>
+                <div id="synergy-log" class="log-content"></div>
+            </div>
+            <div class="log-box">
+                <div class="panel-header">SYSTEM</div>
+                <div id="system-log" class="log-content"></div>
+            </div>
+        </div> -->
+    </div>
+
+    <script src="main.ts" defer></script>
+</body>
+
+</html>

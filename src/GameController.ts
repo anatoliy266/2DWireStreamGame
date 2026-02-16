@@ -1,211 +1,465 @@
-import { PlayerNode } from "./classes/PlayerNode";
-import { Enemy } from "./classes/Enemy";
-import { NetworkBuffer } from "./classes/NetworkBuffer";
-import { DungeonMaster } from "./classes/DungeonMaster";
+// GameController.ts
+import { Player, Enemy, BufferSlot, CommandType } from './Types';
 
 export class GameController {
-    players: Map<string, PlayerNode> = new Map();
-    enemies: Enemy[] = [];
-    buffer: NetworkBuffer = new NetworkBuffer();
-    dungeon: DungeonMaster = new DungeonMaster();
-    isGameRunning: boolean = false;
-    timeLeft: number = 15;
-    timer: any;
+    public isGameRunning: boolean = false;
+    
+    // State
+    private players: Map<string, Player> = new Map();
+    private enemies: Enemy[] = [];
+    private attackSlots: BufferSlot[] = []; // Size 3
+    private defenseSlots: BufferSlot[] = []; // Size 4
+    private assignedDefensePlayers: (string | null)[] = [null, null, null, null]; // Player IDs assigned to D1-D4
 
-    constructor() { this.render(); }
+    private currentHop: number = 1;
+    private turnTimer: number = 15;
 
-    startGame() {
+    private timerInterval: any = null; // Хранит ID интервала
+    private isTimerRunning: boolean = false;
+    
+
+    constructor() {
+        this.resetBuffer();
+    }
+
+    // --- INITIALIZATION ---
+
+    public startGame() {
         this.isGameRunning = true;
-        this.addLog("[SYSTEM]: Build 0.0.2 ready. Prepare for infiltration.");
-        this.nextLevel();
-    }
-
-    private addLog(msg: string) {
-        const log = document.getElementById('system-log');
-        if (log) {
-            log.innerHTML = `<div>> ${msg}</div>` + log.innerHTML;
-            if (log.childNodes.length > 4) log.lastChild?.remove();
-        }
-    }
-
-    // Визуальный эффект летящего пакета
-    private spawnPacket(fromId: string, toSlotType: 'atk' | 'def', slotIndex: number) {
-        const startEl = document.getElementById(`player-${fromId}`);
-        const endEl = document.getElementById(`${toSlotType}-slot-${slotIndex}`);
-        if (!startEl || !endEl) return;
-
-        const packet = document.createElement('div');
-        packet.className = 'packet';
-        packet.innerText = toSlotType === 'atk' ? '[ATK_PKT]' : '[DEF_PKT]';
-        
-        const rect = startEl.getBoundingClientRect();
-        packet.style.left = rect.left + 'px';
-        packet.style.top = rect.top + 'px';
-        document.body.appendChild(packet);
-
-        const endRect = endEl.getBoundingClientRect();
-        setTimeout(() => {
-            packet.style.left = endRect.left + 'px';
-            packet.style.top = endRect.top + 'px';
-            packet.style.opacity = '0';
-        }, 50);
-
-        setTimeout(() => packet.remove(), 600);
-    }
-
-    handleInput(userId: string, userName: string, command: string) {
-        if (!this.isGameRunning) return;
-        
-        let p = this.players.get(userId);
-        if (!p) { p = new PlayerNode(userId, userName); this.players.set(userId, p); }
-        if (p.status === 'TERMINATED' || p.status === 'BLACKOUT') return;
-
-        // Smart Routing Logic из GDD
-        let success = false;
-        let targetSlot = -1;
-
-        if (command.includes('attack')) {
-            // Жадное комбо: ищем первый неполный слот A1 -> A2 -> A3
-            targetSlot = this.buffer.attackSlots.findIndex(s => s.assignedEntityId && s.count < 4);
-            if (targetSlot !== -1) {
-                success = this.buffer.addAttackToken(targetSlot);
-                this.spawnPacket(userId, 'atk', targetSlot);
-            }
-        } else if (command.includes('defend')) {
-            // HP-Приоритет: ищем самого слабого
-            const sortedDef = this.buffer.defenseSlots
-                .filter(s => s.assignedEntityId)
-                .map(s => ({idx: s.index, hp: this.players.get(s.assignedEntityId!)?.integrity || 100}))
-                .sort((a,b) => a.hp - b.hp);
-            
-            if (sortedDef.length > 0) {
-                targetSlot = sortedDef[0].idx;
-                success = this.buffer.addDefenseToken(this.players); // Тут твоя логика NetworkBuffer
-                this.spawnPacket(userId, 'def', targetSlot);
-            }
-        }
-
-        if (!success) {
-            this.addLog(`CRITICAL_OVERFLOW: STACK_FULL. RAID_PENALTY: +40MS`);
-            this.players.forEach(n => n.addLatency(40));
-            // Визуальный шейк экрана
-            document.getElementById('game-overlay')?.classList.add('glitch');
-            setTimeout(() => document.getElementById('game-overlay')?.classList.remove('glitch'), 200);
-        }
-
-        p.addLatency(command.includes('sudo') ? 30 : 10);
-        this.render();
-    }
-
-    private nextLevel() {
-        this.enemies = this.dungeon.loadNextHop();
-        this.addLog(`HOPS_TRANSITION: SYNCING_LAYERS...`);
+        this.drawInterface();
+        this.currentHop = 1;
+        this.spawnEnemies();
         this.startTurn();
+        this.log("SYSTEM", "INFILTRATION STARTED. HOP 1 REACHED.");
     }
 
-    private startTurn() {
-        this.timeLeft = 15;
-        this.buffer.reset();
+    private spawnEnemies() {
+        this.enemies = [];
+        // Simple logic: 1-3 enemies based on Hop
+        const count = this.currentHop === 4 ? 1 : Math.min(3, Math.ceil(Math.random() * 3));
         
-        // Designated Nodes
-        const alive = Array.from(this.players.values()).filter(p => p.status !== 'TERMINATED');
-        const shuffled = alive.sort(() => 0.5 - Math.random()).slice(0, 4);
-        this.buffer.defenseSlots.forEach((s, i) => s.assignedEntityId = shuffled[i]?.id || null);
+        for (let i = 0; i < count; i++) {
+            this.enemies.push({
+                id: `mob_${Date.now()}_${i}`,
+                name: this.currentHop === 4 ? "LEGACY_MAINFRAME" : `DAEMON_v${this.currentHop}.${i}`,
+                hp: 100,
+                maxHp: 100,
+                slotIndex: i // Maps to A1, A2, A3
+            });
+        }
+        this.renderEnemies();
+    }
 
-        // Bind Enemies
-        this.enemies.forEach(e => {
-            if (this.buffer.attackSlots[e.linkedSlotIndex]) 
-                this.buffer.attackSlots[e.linkedSlotIndex].assignedEntityId = e.id;
-        });
+    private resetBuffer() {
+        // 3 Attack Slots, 4 Defense Slots
+        this.attackSlots = Array(3).fill(null).map(() => ({ level: 0, type: null, contributors: [] }));
+        this.defenseSlots = Array(4).fill(null).map(() => ({ level: 0, type: null, contributors: [] }));
+    }
 
-        clearInterval(this.timer);
-        this.timer = setInterval(() => {
-            this.timeLeft--;
-            if (this.timeLeft <= 0) this.resolveTurn();
-            this.render();
+    // --- TURN LOOP ---
+
+    public startTimer() {
+        if (this.isTimerRunning) return; // Защита от двойного запуска
+
+        this.isTimerRunning = true;
+        this.updateTimerUI(); // Обновляем сразу при старте
+
+        this.timerInterval = setInterval(() => {
+            this.turnTimer--;
+            this.updateTimerUI();
+            
+            if (this.turnTimer <= 0) {
+                this.stopTimer(); // Важно остановить таймер перед выполнением логики
+                this.resolveTurn();
+            }
         }, 1000);
     }
 
-    private resolveTurn() {
-        this.addLog(`BUFFER_FLUSHING: EXECUTING_COMMAND_STACK...`);
-        
-        // Damage Logic
-        this.buffer.attackSlots.forEach(s => {
-            if (s.count > 0 && s.assignedEntityId) {
-                const e = this.enemies.find(en => en.id === s.assignedEntityId);
-                if (e) e.takeDamage(s.count * 25);
-            }
-        });
+    public stopTimer() {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
+        this.isTimerRunning = false;
+    }
 
-        this.buffer.defenseSlots.forEach(s => {
-            if (s.assignedEntityId) {
-                const p = this.players.get(s.assignedEntityId);
-                if (p) {
-                    const dmg = s.count === 0 ? 30 : s.count === 1 ? 15 : 0;
-                    if (dmg > 0) p.takeDamage(dmg);
+    private startTurn() {
+        // --- Подготовка нового хода ---
+        this.resetBuffer();
+        this.assignDefenseTargets();
+        
+        // --- Сброс и запуск времени ---
+        this.stopTimer(); // На всякий случай очищаем предыдущий
+        this.turnTimer = 15;
+        this.updateUI();
+        this.startTimer(); // Запуск отсчета
+    }
+
+    // 5. Не забудьте обновить endGame, чтобы он тоже останавливал таймер
+    private endGame() {
+        this.stopTimer();
+        this.isGameRunning = false;
+        this.cleanInterface();
+    }
+
+    private assignDefenseTargets() {
+        // Pick 4 random active players to be targets
+        const activeIds = Array.from(this.players.values())
+            .filter(p => p.state !== 'terminated')
+            .map(p => p.id);
+        
+        // Shuffle and pick 4
+        const shuffled = activeIds.sort(() => 0.5 - Math.random());
+        this.assignedDefensePlayers = [
+            shuffled[0] || null,
+            shuffled[1] || null,
+            shuffled[2] || null,
+            shuffled[3] || null
+        ];
+        this.renderBuffer();
+    }
+
+    // --- INPUT HANDLING ---
+
+    public handleInput(userId: string, userName: string, command: string, args: any) {
+        if (!this.isGameRunning) return;
+
+        // Register/Get Player
+        let player = this.players.get(userId);
+        if (!player) {
+            player = { id: userId, name: userName, integrity: 100, latency: 0, state: 'active', blackoutTimer: 0 };
+            this.players.set(userId, player);
+        }
+
+        if (player.state !== 'active') return; // Dead or Stunned
+
+        // Latency Cost
+        const cost = command.includes("sudo") ? 30 : 10;
+        player.latency += cost;
+
+        // Blackout Check
+        if (player.latency >= 200) {
+            player.state = 'blackout';
+            player.blackoutTimer = 2;
+            this.log("SYSTEM", `NODE ${player.name} OVERHEATED -> BLACKOUT`);
+            this.updateUI();
+            return;
+        }
+
+        // Add to Raw Pool UI
+        this.addRawLog(userName, command);
+
+        // Routing Logic
+        this.processCommand(player, command);
+        this.updateUI();
+    }
+
+    private processCommand(player: Player, cmdString: string) {
+        // Parse intent
+        const isAttack = cmdString.includes("attack");
+        const isDefend = cmdString.includes("defend");
+
+        if (isAttack) {
+            this.routeAttack(player);
+        } else if (isDefend) {
+            this.routeDefense(player);
+        }
+        // TODO: Handle Finishers
+    }
+
+    // --- AUTO-ROUTING LOGIC (GDD) ---
+
+    private routeAttack(player: Player) {
+        // Greedy Algorithm: Fill A1 to X4, then A2, then A3
+        for (let i = 0; i < 3; i++) {
+            const slot = this.attackSlots[i];
+            
+            // Only route to slots that have valid enemies
+            if (!this.enemies.find(e => e.slotIndex === i)) continue;
+
+            if (slot.level < 4) {
+                slot.level++;
+                slot.type = 'attack';
+                slot.contributors.push(player.name);
+                this.log("SYNERGY", `> ATTACK ROUTED TO A${i+1} [X${slot.level}] by ${player.name}`);
+                return; 
+            }
+        }
+        
+        // Overflow if all full
+        this.triggerOverflow(player);
+    }
+
+    private routeDefense(player: Player) {
+        // Priority: Lowest HP Designated Player who isn't safe (Safe = Combo X2)
+        let targetSlotIndex = -1;
+        let lowestHP = 101;
+
+        // Find critical targets (HP < 100 and Slot Level < 2)
+        for (let i = 0; i < 4; i++) {
+            const targetId = this.assignedDefensePlayers[i];
+            if (!targetId) continue;
+            
+            const target = this.players.get(targetId);
+            if (!target) continue;
+
+            if (this.defenseSlots[i].level < 2) {
+                if (target.integrity < lowestHP) {
+                    lowestHP = target.integrity;
+                    targetSlotIndex = i;
+                }
+            }
+        }
+
+        // If everyone is "Safe" (X2), fill linearly to X4
+        if (targetSlotIndex === -1) {
+             for (let i = 0; i < 4; i++) {
+                if (this.assignedDefensePlayers[i] && this.defenseSlots[i].level < 4) {
+                    targetSlotIndex = i;
+                    break;
+                }
+             }
+        }
+
+        if (targetSlotIndex !== -1) {
+            const slot = this.defenseSlots[targetSlotIndex];
+            slot.level++;
+            slot.type = 'defend';
+            slot.contributors.push(player.name);
+            this.log("SYNERGY", `> DEFENSE ROUTED TO D${targetSlotIndex+1} [X${slot.level}]`);
+        } else {
+            this.triggerOverflow(player);
+        }
+    }
+
+    private triggerOverflow(player: Player) {
+        this.log("SYSTEM", `BUFFER OVERFLOW by ${player.name}. ALL NODES +40ms LATENCY.`);
+        // Global Penalty
+        this.players.forEach(p => {
+            if (p.state === 'active') p.latency = Math.min(200, p.latency + 40);
+        });
+    }
+
+    // --- RESOLUTION PHASE ---
+
+    private resolveTurn() {
+        clearInterval(this.timerInterval);
+        this.log("SYSTEM", "EXECUTING BUFFER...");
+
+        // 1. Player Attack
+        this.attackSlots.forEach((slot, index) => {
+            if (slot.level > 0) {
+                const enemy = this.enemies.find(e => e.slotIndex === index);
+                if (enemy) {
+                    // X1=10, X2=15, X3=20, X4=26 (approx based on multiplier)
+                    const multipliers = [0, 1.0, 1.5, 2.0, 2.6];
+                    const dmg = 100 * multipliers[slot.level]; //вернуть на 10!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 100 это тесты
+                    enemy.hp -= dmg;
+                    this.log("SYSTEM", `> SLOT A${index+1} HITS ${enemy.name} FOR ${dmg} DMG`);
                 }
             }
         });
 
-        this.players.forEach(p => p.ventLatency());
-        this.enemies = this.enemies.filter(e => !e.isDead);
-        if (this.enemies.length === 0) this.nextLevel();
-        else this.startTurn();
+        // 2. Enemy Attack / Defense Check
+        this.assignedDefensePlayers.forEach((pid, index) => {
+            if (!pid) return;
+            const player = this.players.get(pid);
+            if (!player) return;
+
+            const defSlot = this.defenseSlots[index];
+            // Boss Damage (Mock value 30)
+            let damage = 30;
+            
+            // Mitigation
+            const multipliers = [0, 10, 20, 30, 40]; // Mitigation amount
+            damage -= multipliers[defSlot.level];
+            if (damage < 0) damage = 0;
+
+            if (damage > 0) {
+                player.integrity -= damage;
+                this.log("SYSTEM", `> ${player.name} TOOK ${damage} DAMAGE (Slot D${index+1})`);
+            } else {
+                this.log("SYNERGY", `> ${player.name} FULLY SHIELDED`);
+            }
+
+            if (player.integrity <= 0) {
+                player.state = 'terminated';
+                player.integrity = 0;
+                this.log("SYSTEM", `NODE ${player.name} TERMINATED.`);
+            }
+        });
+
+        // 3. Cleanup & Cooldown
+        this.enemies = this.enemies.filter(e => e.hp > 0);
+        
+
+        // --- количество игроков оставшихся в живых ---
+        const activePlayersCount = Array.from(this.players.values())
+            .filter(p => p.state !== 'terminated').length;
+
+        // Latency Vent (-15ms)
+        this.players.forEach(p => {
+            if (p.state === 'active') p.latency = Math.max(0, p.latency - 15);
+            else if (p.state === 'blackout') {
+                p.blackoutTimer--;
+                if (p.blackoutTimer <= 0) {
+                    p.state = 'active';
+                    p.latency = 0; // Reset after blackout
+                }
+            }
+        });
+
+        // Next Hop or Next Turn
+        if (activePlayersCount === 0) {
+            this.log("SYSTEM", "GAME OVER. ALL NODES TERMINATED.");
+            this.endGame();
+            return;
+        }
+        else if (this.enemies.length === 0) {
+            this.currentHop++;
+            if (this.currentHop > 4) {
+                this.log("SYSTEM", "MAINFRAME BREACHED. MISSION SUCCESS.");
+                this.isGameRunning = false;
+                //пока чтобы просчто исчезал потом подумаю что добавить в конце успешной игры.
+                this.cleanInterface();
+            } else {
+                this.log("SYSTEM", `AREA CLEARED. MOVING TO HOP ${this.currentHop}...`);
+                // Cooldown bonus (-50ms)
+                this.players.forEach(p => p.latency = Math.max(0, p.latency - 50));
+                setTimeout(() => {
+                    //изменение UI - class="hop active"> добавляется к следующему этапу и пока что не убирается у текущего. 
+                    this.drawHopsLvl();
+
+                    this.spawnEnemies();
+                    this.startTurn();
+                }, 3000);
+            }
+        } else {
+            setTimeout(() => this.startTurn(), 2000);
+        }
+
+        this.updateUI();
     }
 
-    render() {
-        // Отрисовка Hops (Top Bar)
-        const hops = document.getElementById('hops-display');
-        if (hops) hops.innerText = `[ ${"█".repeat(this.dungeon.currentHop)}${"_".repeat(6-this.dungeon.currentHop)} ]`;
+    // --- RENDERING & HELPERS ---
 
-        const timer = document.getElementById('turn-timer');
-        if (timer) timer.innerText = `FLUSHING: ${this.timeLeft}S`;
-
-        // Enemies (Left)
-        const eList = document.getElementById('enemy-list');
-        if (eList) {
-            eList.innerHTML = this.enemies.map(e => `
-                <div class="entity">
-                    <div style="font-size:9px">${e.name} >> A${e.linkedSlotIndex+1}</div>
-                    <div class="hp-gauge"><div class="hp-fill" style="width:${(e.integrity/e.maxIntegrity)*100}%"></div></div>
-                </div>
-            `).join('');
+    private log(type: "SYSTEM" | "SYNERGY", msg: string) {
+        const div = document.getElementById(type === "SYSTEM" ? "system-log" : "synergy-log");
+        if (div) {
+            div.innerHTML += `<div>[${type}] ${msg}</div>`;
+            div.scrollTop = div.scrollHeight;
         }
+    }
 
-        // Buffer (Center)
-        const atkBox = document.getElementById('attack-slots');
-        if (atkBox) {
-            atkBox.innerHTML = this.buffer.attackSlots.map(s => `
-                <div class="slot attack" id="atk-slot-${s.index}">
-                    A${s.index+1} > ${s.assignedEntityId ? 'DATA_LOCKED' : 'IDLE'}
-                    <div class="combo-meter">X${s.count}</div>
-                </div>
-            `).join('');
+    private addRawLog(user: string, cmd: string) {
+        const list = document.getElementById("raw-pool");
+        if (list) {
+            const el = document.createElement("div");
+            el.className = "pool-item";
+            el.innerText = `> [${user}]: ${cmd}`;
+            list.appendChild(el);
+            list.scrollTop = list.scrollHeight;
         }
-        const defBox = document.getElementById('defense-slots');
-        if (defBox) {
-            defBox.innerHTML = this.buffer.defenseSlots.map(s => `
-                <div class="slot defense" id="def-slot-${s.index}">
-                    D${s.index+1} > ${this.players.get(s.assignedEntityId!)?.name || '---'}
-                    <div class="combo-meter">X${s.count}</div>
-                </div>
-            `).join('');
-        }
+    }
 
-        // Players (Right)
-        const pList = document.getElementById('player-list');
-        if (pList) {
-            const designated = Array.from(this.players.values())
-                .filter(p => this.buffer.defenseSlots.some(s => s.assignedEntityId === p.id))
-                .slice(0,4);
+    private updateUI() {
+        this.renderEnemies();
+        this.renderBuffer();
+        this.renderPlayers();
+    }
+    drawHopsLvl(){
+        const el = document.getElementById(`hop-${this.currentHop}`);
+        el?.classList.add("active");
+    }
+
+
+    drawInterface() {
+        const el = document.getElementById("general-store");
+        el?.classList.remove("element-out");
+        el?.classList.add("element-in");
+    }
+    cleanInterface() {
+        const el = document.getElementById("general-store");
+        el?.classList.remove("element-in");
+        el?.classList.add("element-out");
+    }
+    
+    private updateTimerUI() {
+        const el = document.getElementById("timer-display");
+        if(el) el.innerText = this.turnTimer.toString();
+    }
+
+    private renderEnemies() {
+        const container = document.getElementById("enemy-container");
+        if (!container) return;
+        container.innerHTML = "";
+        this.enemies.forEach(e => {
+            const div = document.createElement("div");
+            div.className = "enemy-slot";
+            div.innerHTML = `
+                <div>[!] ${e.name}</div>
+                <div style="font-size:0.8em">LINKED: A${e.slotIndex + 1}</div>
+                <div class="bar-container"><div class="hp-bar" style="width:${(e.hp/e.maxHp)*100}%; background:red;"></div></div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    private renderBuffer() {
+        // Attack Slots
+        this.attackSlots.forEach((slot, i) => {
+            const el = document.getElementById(`slot-a${i+1}`);
+            if (el) {
+                el.className = `slot filled-${slot.level}`;
+                el.innerText = `[A${i+1}] ${slot.level > 0 ? `ATTACK X${slot.level}` : "EMPTY"}`;
+            }
+        });
+
+        // Defense Slots
+        this.defenseSlots.forEach((slot, i) => {
+            const el = document.getElementById(`slot-d${i+1}`);
+            if (el) {
+                const targetId = this.assignedDefensePlayers[i];
+                const targetName = targetId ? (this.players.get(targetId)?.name || "???") : "NONE";
+                
+                el.className = `slot defense-slot filled-${slot.level}`;
+                if (slot.level === 0) el.classList.add("danger");
+                
+                el.innerHTML = `
+                    <span>[D${i+1}] ${targetName}</span>
+                    <span>${slot.level > 0 ? `SHIELD X${slot.level}` : "VULNERABLE"}</span>
+                `;
+            }
+        });
+    }
+
+    private renderPlayers() {
+        const list = document.getElementById("player-list");
+        if (!list) return;
+        
+        // Sort: Active first, then by Latency
+        const sorted = Array.from(this.players.values()).sort((a,b) => b.integrity - a.integrity);
+
+        list.innerHTML = "";
+        sorted.forEach(p => {
+            const div = document.createElement("div");
+            div.className = `player-card ${p.state}`;
             
-            pList.innerHTML = designated.map(p => `
-                <div id="player-${p.id}" class="entity ${p.integrity < 20 ? 'glitch' : ''}">
-                    <div style="font-size:9px">${p.name} [${p.status}]</div>
-                    <div class="hp-gauge"><div class="hp-fill" style="width:${p.integrity}%"></div></div>
-                    <div class="lat-gauge"><div class="lat-fill" style="width:${(p.latency/200)*100}%"></div></div>
+            let status = p.state === 'active' ? '' : `[${p.state.toUpperCase()}]`;
+            
+            div.innerHTML = `
+                <div style="display:flex; justify-content:space-between;">
+                    <span>${p.name} ${status}</span>
+                    <span>${p.latency}ms</span>
                 </div>
-            `).join('');
-        }
+                <div class="bar-container">
+                    <div class="hp-bar" style="width:${p.integrity}%"></div>
+                </div>
+                <div class="bar-container" style="margin-top:1px;">
+                     <div class="lat-bar" style="width:${Math.min(100, p.latency/2)}%"></div>
+                </div>
+            `;
+            list.appendChild(div);
+        });
     }
 }
