@@ -157,124 +157,131 @@ export class GameController {
 
     // --- INPUT HANDLING ---
 
-    public handleInput(userId: string, userName: string, command: string, args: any) {
-        if (!this.isGameRunning) return;
+    public handleInput(userId: string, userName: string, text: string) {
+        const command = text.substring(1);
+        
 
-        // Register/Get Player
-        let player = this.players.get(userId);
-        if (!player) {
-            player = { id: userId, name: userName, integrity: 100, latency: 0, state: 'active', blackoutTimer: 0 };
-            this.players.set(userId, player);
-        }
 
-        if (player.state !== 'active') return; // Dead or Stunned
 
-        // Latency Cost
-        const cost = command.includes("sudo") ? 30 : 10;
-        player.latency += cost;
 
-        // Blackout Check
-        if (player.latency >= 200) {
-            player.state = 'blackout';
-            player.blackoutTimer = 2;
-            this.log("SYSTEM", `NODE ${player.name} OVERHEATED -> BLACKOUT`);
-            this.updateUI();
-            return;
-        }
 
-        // Add to Raw Pool UI
-        this.addRawLog(userName, command);
+        // if (!this.isGameRunning) return;
 
-        // Routing Logic
-        this.processCommand(player, command);
-        this.updateUI();
+        // // Register/Get Player
+        // let player = this.players.get(userId);
+        // if (!player) {
+        //     player = { id: userId, name: userName, integrity: 100, latency: 0, state: 'active', blackoutTimer: 0 };
+        //     this.players.set(userId, player);
+        // }
+
+        // if (player.state !== 'active') return; // Dead or Stunned
+
+        // // Latency Cost
+        // const cost = command.includes("sudo") ? 30 : 10;
+        // player.latency += cost;
+
+        // // Blackout Check
+        // if (player.latency >= 200) {
+        //     player.state = 'blackout';
+        //     player.blackoutTimer = 2;
+        //     this.log("SYSTEM", `NODE ${player.name} OVERHEATED -> BLACKOUT`);
+        //     this.updateUI();
+        //     return;
+        // }
+
+        // // Add to Raw Pool UI
+        // this.addRawLog(userName, command);
+
+        // // Routing Logic
+        // this.processCommand(player, command);
+        // this.updateUI();
     }
 
-    private processCommand(player: Player, cmdString: string) {
-        // Parse intent
-        const isAttack = cmdString.includes("attack");
-        const isDefend = cmdString.includes("defend");
+    // private processCommand(player: Player, cmdString: string) {
+    //     // Parse intent
+    //     const isAttack = cmdString.includes("attack");
+    //     const isDefend = cmdString.includes("defend");
 
-        if (isAttack) {
-            this.routeAttack(player);
-        } else if (isDefend) {
-            this.routeDefense(player);
-        }
-        // TODO: Handle Finishers
-    }
+    //     if (isAttack) {
+    //         this.routeAttack(player);
+    //     } else if (isDefend) {
+    //         this.routeDefense(player);
+    //     }
+    //     // TODO: Handle Finishers
+    // }
 
-    // --- AUTO-ROUTING LOGIC (GDD) ---
+    // // --- AUTO-ROUTING LOGIC (GDD) ---
 
-    private routeAttack(player: Player) {
-        // Greedy Algorithm: Fill A1 to X4, then A2, then A3
-        for (let i = 0; i < 3; i++) {
-            const slot = this.attackSlots[i];
+    // private routeAttack(player: Player) {
+    //     // Greedy Algorithm: Fill A1 to X4, then A2, then A3
+    //     for (let i = 0; i < 3; i++) {
+    //         const slot = this.attackSlots[i];
 
-            // Only route to slots that have valid enemies
-            if (!this.enemies.find(e => e.slotIndex === i)) continue;
+    //         // Only route to slots that have valid enemies
+    //         if (!this.enemies.find(e => e.slotIndex === i)) continue;
 
-            if (slot.level < 4) {
-                slot.level++;
-                slot.type = 'attack';
-                slot.contributors.push(player.name);
-                this.log("SYNERGY", `> ATTACK ROUTED TO A${i + 1} [X${slot.level}] by ${player.name}`);
-                return;
-            }
-        }
+    //         if (slot.level < 4) {
+    //             slot.level++;
+    //             slot.type = 'attack';
+    //             slot.contributors.push(player.name);
+    //             this.log("SYNERGY", `> ATTACK ROUTED TO A${i + 1} [X${slot.level}] by ${player.name}`);
+    //             return;
+    //         }
+    //     }
 
-        // Overflow if all full
-        this.triggerOverflow(player);
-    }
+    //     // Overflow if all full
+    //     this.triggerOverflow(player);
+    // }
 
-    private routeDefense(player: Player) {
-        // Priority: Lowest HP Designated Player who isn't safe (Safe = Combo X2)
-        let targetSlotIndex = -1;
-        let lowestHP = 101;
+    // private routeDefense(player: Player) {
+    //     // Priority: Lowest HP Designated Player who isn't safe (Safe = Combo X2)
+    //     let targetSlotIndex = -1;
+    //     let lowestHP = 101;
 
-        // Find critical targets (HP < 100 and Slot Level < 2)
-        for (let i = 0; i < 4; i++) {
-            const targetId = this.assignedDefensePlayers[i];
-            if (!targetId) continue;
+    //     // Find critical targets (HP < 100 and Slot Level < 2)
+    //     for (let i = 0; i < 4; i++) {
+    //         const targetId = this.assignedDefensePlayers[i];
+    //         if (!targetId) continue;
 
-            const target = this.players.get(targetId);
-            if (!target) continue;
+    //         const target = this.players.get(targetId);
+    //         if (!target) continue;
 
-            if (this.defenseSlots[i].level < 2) {
-                if (target.integrity < lowestHP) {
-                    lowestHP = target.integrity;
-                    targetSlotIndex = i;
-                }
-            }
-        }
+    //         if (this.defenseSlots[i].level < 2) {
+    //             if (target.integrity < lowestHP) {
+    //                 lowestHP = target.integrity;
+    //                 targetSlotIndex = i;
+    //             }
+    //         }
+    //     }
 
-        // If everyone is "Safe" (X2), fill linearly to X4
-        if (targetSlotIndex === -1) {
-            for (let i = 0; i < 4; i++) {
-                if (this.assignedDefensePlayers[i] && this.defenseSlots[i].level < 4) {
-                    targetSlotIndex = i;
-                    break;
-                }
-            }
-        }
+    //     // If everyone is "Safe" (X2), fill linearly to X4
+    //     if (targetSlotIndex === -1) {
+    //         for (let i = 0; i < 4; i++) {
+    //             if (this.assignedDefensePlayers[i] && this.defenseSlots[i].level < 4) {
+    //                 targetSlotIndex = i;
+    //                 break;
+    //             }
+    //         }
+    //     }
 
-        if (targetSlotIndex !== -1) {
-            const slot = this.defenseSlots[targetSlotIndex];
-            slot.level++;
-            slot.type = 'defend';
-            slot.contributors.push(player.name);
-            this.log("SYNERGY", `> DEFENSE ROUTED TO D${targetSlotIndex + 1} [X${slot.level}]`);
-        } else {
-            this.triggerOverflow(player);
-        }
-    }
+    //     if (targetSlotIndex !== -1) {
+    //         const slot = this.defenseSlots[targetSlotIndex];
+    //         slot.level++;
+    //         slot.type = 'defend';
+    //         slot.contributors.push(player.name);
+    //         this.log("SYNERGY", `> DEFENSE ROUTED TO D${targetSlotIndex + 1} [X${slot.level}]`);
+    //     } else {
+    //         this.triggerOverflow(player);
+    //     }
+    // }
 
-    private triggerOverflow(player: Player) {
-        this.log("SYSTEM", `BUFFER OVERFLOW by ${player.name}. ALL NODES +40ms LATENCY.`);
-        // Global Penalty
-        this.players.forEach(p => {
-            if (p.state === 'active') p.latency = Math.min(200, p.latency + 40);
-        });
-    }
+    // private triggerOverflow(player: Player) {
+    //     this.log("SYSTEM", `BUFFER OVERFLOW by ${player.name}. ALL NODES +40ms LATENCY.`);
+    //     // Global Penalty
+    //     this.players.forEach(p => {
+    //         if (p.state === 'active') p.latency = Math.min(200, p.latency + 40);
+    //     });
+    // }
 
     // --- RESOLUTION PHASE ---
 

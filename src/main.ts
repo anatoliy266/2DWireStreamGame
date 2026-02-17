@@ -29,27 +29,20 @@ client.on("Raw.ActionCompleted", async (data: any) => {
   ////////////////////////////////////////////////////////////////////
   //переписать блок чтобы реагировал не на команды а на чат сообщения, условно чтобы типы писали линух подобные командыы а интерпретатор в пуле их парсил и комбинировал в комбухи
   ////////////////////////////////////////////////////////////////////
-  let intent = "";
-  if (commandName === "Attack") intent = "attack";
-  else if (commandName === "Def") intent = "defend";
-
-  // Modifiers
-  let fullCommand = intent;
-  if (rawInput.includes("sudo")) fullCommand = "sudo " + intent;
-
-  if (intent) {
-    game.handleInput(userId.toString(), userName, fullCommand, args);
-  }
 });
 
 client.on("Twitch.ChatMessage", async (data: any) => {
   console.log(data);
+  const userId = data.data.user?.id;
+  const userName = data.data.user?.name || "Anonymous";
   if (game.isPrepStage) {
     const userId = data.data.user?.id;
     const userName = data.data.user?.name || "Anonymous";
-    game.addPlayer(userId, userName, );
+    game.addPlayer(userId, userName,);
+    return;
   }
-  return;
+  const text: string = data.data.text;
+  game.handleInput(userId.toString(), userName, text);
 });
 // For testing purposes: Mock connection
 // client.connect(); 
