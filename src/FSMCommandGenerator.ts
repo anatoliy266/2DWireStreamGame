@@ -1,24 +1,9 @@
-type TokenType = "PREFIX" | "COMMAND_WORD" | "MODIFIER" | "SUFFIX" | "PARAM";
-
-interface Token {
-  key: string;
-  type: TokenType;
-  basePower: number;
-  semanticTags: string[];
-  author: string;
-}
-
-interface Command {
-  tokens: Token[];
-  basePower: number;
-  contributors: Map<string, number>;
-  tags: Set<string>;
-}
+import {TokenType, Token, Command } from './Types';
 
 // =====================
 // FSM правила: для каждого состояния и типа токена — массив возможных nextState
 // =====================
-const TokenFSMMap: Record<TokenType, TokenType[]> = {
+export const TokenFSMMap: Record<TokenType, TokenType[]> = {
   PREFIX: ["PREFIX", "COMMAND_WORD"],        // после префикса можно ещё префикс или команду
   COMMAND_WORD: ["PREFIX", "COMMAND_WORD", "PARAM"], // после команды могут быть префикс, команда или параметр
   PARAM: ["MODIFIER"],                      // после параметра идёт модификатор
@@ -26,7 +11,7 @@ const TokenFSMMap: Record<TokenType, TokenType[]> = {
   SUFFIX: []                                // завершающее состояние
 };
 
-function generateRandomCommandOptimized(allTokens: Token[]): Command | null {
+export function generateRandomCommandOptimized(allTokens: Token[]): Command | null {
   if (!allTokens.length) return null;
 
   // Группируем токены по типу для быстрого доступа

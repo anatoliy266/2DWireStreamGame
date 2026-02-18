@@ -1,5 +1,6 @@
 // GameController.ts
-import { Player, Enemy, BufferSlot, CommandType } from './Types';
+import { Player, Enemy, BufferSlot, TokenType } from './Types';
+import { Tokenizer } from './CommandTokenizer';
 
 export class GameController {
 
@@ -28,17 +29,20 @@ export class GameController {
     // --- INITIALIZATION ---
 
     public prepareGame() {
+        console.log("prepareGame")
         this.showIntro();
         this.isGameRunning = true;
         this.isPrepStage = true;
-        setInterval(() => {
+        setTimeout(() => {
             this.isPrepStage = false;
             if (this.players.size == 0) return;
             this.hideIntro();
             this.startGame();
-        }, 30000);
+            this.log("SYSTEM", "INFILTRATION STARTED. HOP 1 REACHED.");
+            console.log("interval triggered")
+        }, 1000);
 
-        this.log("SYSTEM", "INFILTRATION STARTED. HOP 1 REACHED.");
+        
     }
     showIntro() {
         return;
@@ -60,6 +64,7 @@ export class GameController {
     }
 
     public startGame() {
+        console.log("game started");
         this.isGameRunning = true;
         this.drawInterface();
         this.currentHop = 1;
@@ -160,7 +165,7 @@ export class GameController {
     public handleInput(userId: string, userName: string, text: string) {
         const command = text.substring(1);
         
-
+        
 
 
 

@@ -1,4 +1,4 @@
-export type CommandType = 'attack' | 'defend' | 'finisher_attack' | 'finisher_defend';
+export type TokenType = "PREFIX" | "COMMAND_WORD" | "MODIFIER" | "SUFFIX" | "PARAM";
 
 export interface Player {
     id: string;
@@ -19,6 +19,21 @@ export interface Enemy {
 
 export interface BufferSlot {
     level: number; // 0=Empty, 1=X1, ... 4=X4
-    type: CommandType | null;
+    type: TokenType | null;
     contributors: string[]; // Player names for logs
+}
+
+export interface Token {
+  key: string;
+  type: TokenType;
+  basePower: number;
+  semanticTags: string[];
+  author: string;
+}
+
+export interface Command {
+  tokens: Token[];
+  basePower: number;
+  contributors: Map<string, number>;
+  tags: Set<string>;
 }
