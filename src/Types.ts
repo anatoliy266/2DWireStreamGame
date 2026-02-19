@@ -1,5 +1,3 @@
-export type TokenType = "PREFIX" | "COMMAND_WORD" | "MODIFIER" | "SUFFIX" | "PARAM";
-
 export interface Player {
     id: string;
     name: string;
@@ -19,21 +17,45 @@ export interface Enemy {
 
 export interface BufferSlot {
     level: number; // 0=Empty, 1=X1, ... 4=X4
-    type: TokenType | null;
     contributors: string[]; // Player names for logs
 }
 
-export interface Token {
-  key: string;
-  type: TokenType;
-  basePower: number;
-  semanticTags: string[];
-  author: string;
-}
 
 export interface Command {
-  tokens: Token[];
+  name: string;
   basePower: number;
   contributors: Map<string, number>;
   tags: Set<string>;
 }
+
+export interface Parameter{
+    name: string;
+    multiplier: Number;
+}
+
+export const ParametersMap: Parameter[] = [
+    {
+        name: "-параметр1",
+        multiplier: 1.01
+    },
+    {
+        name: "--параметр2",
+        multiplier: 1.02
+    }
+
+]
+
+export const CommandMap: Command[] = [
+  {
+    name: "команда1",
+    basePower: 10,
+    contributors: new Map(), // Map из пар ключ-значение
+    tags: new Set(["атакующая", "магия"])                  // Set из строк
+  },
+  {
+    name: "команда2",
+    basePower: 7,
+    contributors: new Map(),
+    tags: new Set(["защита"])
+  }
+];

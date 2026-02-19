@@ -1,7 +1,7 @@
 import { StreamerbotClient } from "@streamerbot/client";
 import { GameController } from "./GameController";
 
-const game = new GameController();
+let game = new GameController();
 const client = new StreamerbotClient();
 
 // --- STREAMER.BOT INTEGRATION ---
@@ -19,19 +19,21 @@ client.on("Raw.ActionCompleted", async (data: any) => {
 
   // System
   if (commandName === "StartGame") {
+    game = new GameController();
     if (!game.isGameRunning) {
       game.prepareGame();
     }
     return;
   }
-
-  // Determine Intent from Chat
-  ////////////////////////////////////////////////////////////////////
-  //переписать блок чтобы реагировал не на команды а на чат сообщения, условно чтобы типы писали линух подобные командыы а интерпретатор в пуле их парсил и комбинировал в комбухи
-  ////////////////////////////////////////////////////////////////////
 });
 
+
+// Determine Intent from Chat
+////////////////////////////////////////////////////////////////////
+//переписать блок чтобы реагировал не на команды а на чат сообщения, условно чтобы типы писали линух подобные командыы а интерпретатор в пуле их парсил и комбинировал в комбухи
+////////////////////////////////////////////////////////////////////
 client.on("Twitch.ChatMessage", async (data: any) => {
+  if (!game.isGameRunning) return;
   console.log(data);
   const userId = data.data.user?.id;
   const userName = data.data.user?.name || "Anonymous";
@@ -49,7 +51,7 @@ client.on("Twitch.ChatMessage", async (data: any) => {
 
 // --- MANUAL DEBUG CONTROLS (For Browser Testing without Twitch) ---
 // Add global functions to window so we can button mash in console or via temp buttons
-(window as any).debugGame = game;
-(window as any).mockChat = (name: string, cmd: string) => {
-  game.handleInput(name, name, cmd, {});
-};
+// (window as any).debugGame = game;
+// (window as any).mockChat = (name: string, cmd: string) => {
+//   game.handleInput(name, name, cmd);
+// };
