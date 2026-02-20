@@ -108,7 +108,7 @@ export class GameController {
                 this.isGameRunning = false;
                 return;
             }
-            
+
             this.startGame();
             this.log("SYSTEM", "INFILTRATION STARTED. HOP 1 REACHED.");
             console.log("interval triggered")
@@ -401,14 +401,34 @@ export class GameController {
 
     private spawnEnemies() {
         this.enemies = [];
+        const playerCount = this.players.size; // можно заменить на количество активных, если нужно
         const count = this.currentHop === 4 ? 1 : Math.min(3, Math.ceil(Math.random() * 3));
+
         for (let i = 0; i < count; i++) {
+            const isBoss = (this.currentHop === 4);
+            let name: string;
+            let baseHP: number;
+            let baseDamage: number;
+
+            if (isBoss) {
+                name = "LEGACY_MAINFRAME";
+                baseHP = 500 + 50 * playerCount;
+                baseDamage = 60 + 10 * playerCount;
+            } else {
+                name = `DAEMON_v${this.currentHop}.${i}`;
+                baseHP = 150 + 20 * playerCount;
+                baseDamage = 30 + 5 * playerCount;
+            }
+
             this.enemies.push({
                 id: `mob_${Date.now()}_${i}`,
-                name: this.currentHop === 4 ? "LEGACY_MAINFRAME" : `DAEMON_v${this.currentHop}.${i}`,
-                integrity: 100,
-                slotIndex: i, // A1, A2, A3
-                latency: 200
+                name: name,
+                integrity: baseHP,
+                maxIntegrity: baseHP,      // новое поле
+                latency: 200,
+                slotIndex: i,
+                baseDamage: baseDamage,    // новое поле
+                attackType: isBoss ? 'aoe' : 'single' // новое поле
             });
         }
         this.renderEnemies();
@@ -735,105 +755,169 @@ export class GameController {
     //только тем игрокам кто указан в команде как контрибутор
     // только по командам которые были записаны в слоты атаки защиты
     // необходимо также придумать, каким образом вес будет конвертироваться в очки.
+
+
+
+
+    //
     private resolveTurn() {
         this.stopTimer();
         this.log("SYSTEM", "EXECUTING BUFFER...");
 
-        // 1. Атака игроков по врагам (без изменений)
+        // --- ФАЗА 1: АТАКА ИГРОКОВ ПО ВРАГАМ ---
         this.attackSlots.forEach((slot, index) => {
             if (slot.level > 0) {
                 const enemy = this.enemies.find(e => e.slotIndex === index);
-                if (enemy) {
-                    const multipliers = [0, 1.0, 1.5, 2.0, 2.6];
-                    const dmg = 100 * multipliers[slot.level]; // тестовое значение, замените на реальное
-                    enemy.integrity -= dmg;
-                    this.log("SYSTEM", `> SLOT A${index + 1} HITS ${enemy.name} FOR ${dmg} DMG`);
+                if (enemy && enemy.integrity > 0) {
+                    // Множители урона от уровня слота: 1.0, 1.2, 1.5, 2.0
+                    const multipliers = [0, 1.0, 1.2, 1.5, 2.0];
+                    const slotMultiplier = multipliers[slot.level] || 1.0;
+                    const damage = Math.floor(slot.totalPower * slotMultiplier);
+                    enemy.integrity -= damage;
+                    this.log("SYSTEM", `> SLOT A${index + 1} HITS ${enemy.name} FOR ${damage} DMG (${slot.totalPower} * ${slotMultiplier})`);
                 }
             }
         });
 
-        // 2. Атака врагов по защитным слотам
-        const enemyDamage = this.BASE_ENEMY_DAMAGE * this.currentHop; // урон растёт с хопом
-        this.assignedDefensePlayers.forEach((playerId, index) => {
-            if (!playerId) return;
-            const player = this.players.get(playerId);
-            if (!player) return;
+        // Удаляем убитых врагов (они не будут атаковать в этом ходу)
+        const killedEnemies = this.enemies.filter(e => e.integrity <= 0);
+        killedEnemies.forEach(e => this.log("SYSTEM", `> ${e.name} DESTROYED.`));
+        this.enemies = this.enemies.filter(e => e.integrity > 0);
 
-            const defSlot = this.defenseSlots[index];
-            let damageToPlayer = enemyDamage;
+        // --- ФАЗА 2: АТАКА ВРАГОВ ПО ЗАЩИТНЫМ СЛОТАМ ---
+        const attackCommands = CommandMap.filter(cmd => cmd.tags.has('атакующая'));
+        const activePlayersCount = Array.from(this.players.values()).filter(p => p.state !== 'terminated').length;
 
-            // Если в слоте есть защита, она поглощает урон
-            if (defSlot.totalPower > 0) {
-                if (defSlot.totalPower >= enemyDamage) {
-                    damageToPlayer = 0;
-                    this.log("SYSTEM", `> D${index + 1} полностью заблокировал урон (${defSlot.totalPower} ≥ ${enemyDamage})`);
-                } else {
-                    damageToPlayer = enemyDamage - defSlot.totalPower;
-                    this.log("SYSTEM", `> D${index + 1} частично заблокировал: урон ${damageToPlayer} (${defSlot.totalPower} < ${enemyDamage})`);
+        this.enemies.forEach(enemy => {
+            if (attackCommands.length === 0) return;
+
+            // Выбираем случайную атакующую команду
+            const cmd = attackCommands[Math.floor(Math.random() * attackCommands.length)];
+
+            // Базовый урон команды
+            let damage = cmd.basePower;
+
+            // Масштабирование от хопа и числа активных игроков
+            const hopMultiplier = 0.8 + 0.2 * this.currentHop; // 1.0 на хопе 1, 1.4 на хопе 4
+            const playerMultiplier = 1 + 0.1 * activePlayersCount; // +10% за каждого игрока
+            damage = Math.floor(damage * hopMultiplier * playerMultiplier);
+
+            // С вероятностью 30% применяем случайный параметр (множитель)
+            let paramUsed = '';
+            if (Math.random() < 0.3 && ParametersMap.length > 0) {
+                const param = ParametersMap[Math.floor(Math.random() * ParametersMap.length)];
+                damage = Math.floor(damage * param.multiplier);
+                paramUsed = ` with ${param.name}`;
+            }
+
+            this.log("SYSTEM", `> ${enemy.name} uses ${cmd.name}${paramUsed} for ${damage} damage`);
+
+            // Босс (hop 4) атакует все 4 слота, обычные мобы — один случайный
+            const isBoss = (this.currentHop === 4); // или можно проверять enemy.name
+            if (isBoss) {
+                for (let slot = 0; slot < 4; slot++) {
+                    this.applyEnemyAttackToSlot(slot, damage, enemy.name);
                 }
             } else {
-                this.log("SYSTEM", `> D${index + 1} без защиты, урон ${damageToPlayer}`);
+                const targetSlot = Math.floor(Math.random() * 4);
+                this.applyEnemyAttackToSlot(targetSlot, damage, enemy.name);
             }
+        });
 
-            if (damageToPlayer > 0) {
-                player.integrity -= damageToPlayer;
-                this.log("SYSTEM", `> ${player.name} получил ${damageToPlayer} урона`);
+        // Начисляем очки игрокам за использование команд в этом ходу
+        this.awardContributions();
+
+        // --- ФАЗА 3: ОБНОВЛЕНИЕ СОСТОЯНИЙ ИГРОКОВ (latency, blackout) ---
+        this.players.forEach(p => {
+            if (p.state === 'active') {
+                p.latency = Math.max(0, p.latency - 15);
+            } else if (p.state === 'blackout') {
+                p.blackoutTimer--;
+                if (p.blackoutTimer <= 0) {
+                    p.state = 'active';
+                    p.latency = 0;
+                    this.log("SYSTEM", `> ${p.name} recovered from blackout.`);
+                }
             }
+        });
 
+        // Проверяем, остались ли активные игроки
+        const remainingActive = Array.from(this.players.values()).filter(p => p.state !== 'terminated').length;
+
+        // --- ФАЗА 4: ПЕРЕХОД К СЛЕДУЮЩЕМУ ХОДУ / ХОПУ ---
+        if (remainingActive === 0) {
+            this.log("SYSTEM", "GAME OVER. ALL NODES TERMINATED.");
+            this.endGame();
+            return;
+        }
+
+        if (this.enemies.length === 0) {
+            // Все враги убиты, переходим на новый хоп
+            this.currentHop++;
+            if (this.currentHop > 4) {
+                this.log("SYSTEM", "MAINFRAME BREACHED. MISSION SUCCESS.");
+                this.endGame();
+            } else {
+                this.log("SYSTEM", `AREA CLEARED. MOVING TO HOP ${this.currentHop}...`);
+                // Снижаем latency у выживших (как «передышка»)
+                this.players.forEach(p => {
+                    if (p.state !== 'terminated') {
+                        p.latency = Math.max(0, p.latency - 50);
+                    }
+                });
+                setTimeout(() => {
+                    this.drawHopsLvl();
+                    this.spawnEnemies(); // новые враги с учётом текущего числа игроков
+                    this.startTurn();
+                }, 3000);
+            }
+        } else {
+            // Есть живые враги — следующий ход через 2 секунды
+            setTimeout(() => this.startTurn(), 2000);
+        }
+
+        this.updateUI();
+    }
+
+    /**
+     * Применить атаку врага к конкретному защитному слоту.
+     * @param slotIndex индекс слота (0..3)
+     * @param damage урон атаки
+     * @param attackerName имя врага для логов
+     */
+    private applyEnemyAttackToSlot(slotIndex: number, damage: number, attackerName: string) {
+        const playerId = this.assignedDefensePlayers[slotIndex];
+        if (!playerId) {
+            this.log("SYSTEM", `> ${attackerName} attacks D${slotIndex + 1} but no player assigned.`);
+            return;
+        }
+        const player = this.players.get(playerId);
+        if (!player || player.state === 'terminated') return;
+
+        const defSlot = this.defenseSlots[slotIndex];
+        let damageToPlayer = damage;
+
+        if (defSlot.totalPower > 0) {
+            if (defSlot.totalPower >= damage) {
+                damageToPlayer = 0;
+                this.log("SYSTEM", `> D${slotIndex + 1} fully blocked ${attackerName}'s attack (${defSlot.totalPower} ≥ ${damage})`);
+            } else {
+                damageToPlayer = damage - defSlot.totalPower;
+                this.log("SYSTEM", `> D${slotIndex + 1} partially blocked: ${damageToPlayer} dmg from ${attackerName} (${defSlot.totalPower} < ${damage})`);
+            }
+        } else {
+            this.log("SYSTEM", `> D${slotIndex + 1} has no defense, takes ${damageToPlayer} dmg from ${attackerName}`);
+        }
+
+        if (damageToPlayer > 0) {
+            player.integrity -= damageToPlayer;
+            this.log("SYSTEM", `> ${player.name} took ${damageToPlayer} damage from ${attackerName}`);
             if (player.integrity <= 0) {
                 player.state = 'terminated';
                 player.integrity = 0;
                 this.log("SYSTEM", `NODE ${player.name} TERMINATED.`);
             }
-        });
-
-        this.awardContributions();
-
-        // 3. Очистка мёртвых врагов
-        this.enemies = this.enemies.filter(e => e.integrity > 0);
-
-        const activePlayersCount = Array.from(this.players.values())
-            .filter(p => p.state !== 'terminated').length;
-
-        // 4. Снижение latency и обработка blackout
-        this.players.forEach(p => {
-            if (p.state === 'active') p.latency = Math.max(0, p.latency - 15);
-            else if (p.state === 'blackout') {
-                p.blackoutTimer--;
-                if (p.blackoutTimer <= 0) {
-                    p.state = 'active';
-                    p.latency = 0;
-                }
-            }
-        });
-
-        // 5. Переход к следующему ходу или хопу
-        if (activePlayersCount === 0) {
-            this.log("SYSTEM", "GAME OVER. ALL NODES TERMINATED.");
-            this.endGame();
-            return;
         }
-        else if (this.enemies.length === 0) {
-            this.currentHop++;
-            if (this.currentHop > 4) {
-                this.log("SYSTEM", "MAINFRAME BREACHED. MISSION SUCCESS.");
-                this.isGameRunning = false;
-                this.endGame();
-                this.cleanInterface();
-            } else {
-                this.log("SYSTEM", `AREA CLEARED. MOVING TO HOP ${this.currentHop}...`);
-                this.players.forEach(p => p.latency = Math.max(0, p.latency - 50));
-                setTimeout(() => {
-                    this.drawHopsLvl();
-                    this.spawnEnemies();
-                    this.startTurn();
-                }, 3000);
-            }
-        } else {
-            setTimeout(() => this.startTurn(), 2000);
-        }
-
-        this.updateUI();
     }
 
     // --- RENDERING (обновлено отображение защиты) ---
@@ -882,13 +966,18 @@ export class GameController {
         if (!container) return;
         container.innerHTML = "";
         this.enemies.forEach(e => {
+            const barWidth = (e.integrity / e.maxIntegrity) * 100;
             const div = document.createElement("div");
             div.className = "enemy-slot";
             div.innerHTML = `
-                <div style="display:flex; justify-content:space-between;"><span>[!] ${e.name}</span><span>${e.integrity}</span><span>${e.latency}%</span></div>
-                <div style="font-size:0.8em">LINKED: A${e.slotIndex + 1}</div>
-                <div class="bar-container"><div class="hp-bar" style="width:${(e.integrity)}%; background:red;"></div></div>
-            `;
+            <div style="display:flex; justify-content:space-between;">
+                <span>[!] ${e.name}</span>
+                <span>${e.integrity}/${e.maxIntegrity}</span>
+                <span>${e.latency}%</span>
+            </div>
+            <div style="font-size:0.8em">LINKED: A${e.slotIndex + 1}</div>
+            <div class="bar-container"><div class="hp-bar" style="width:${barWidth}%; background:red;"></div></div>
+        `;
             container.appendChild(div);
         });
     }
@@ -950,7 +1039,7 @@ export class GameController {
     // несколько сообщений, полоса загрузки, асции картинка, можно сделать несколько сценариев и между ними переключаться чтобы не показывалось одно и то же.
     //также необходимо изменить все другие методы которые вызывают обновление ингтерфейса и добавить там проверку - если игрок только что присоединился - отрисовывать окно
     //если уже был - не рисовать 
-    
+
 
     private renderNewPlayerJoining(player: Player) {
         // Создаём контейнер
