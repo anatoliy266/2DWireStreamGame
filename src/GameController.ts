@@ -18,7 +18,12 @@ export class GameController {
     public isPrepStage: boolean = false;
 
     // State
+    //масиив игроков также должен содержать вклад игрока в текущей игре
+    //если игрок "умер" то его вклад перестает учитываться в финальном рассчете мест, только если он в моменте не использовал возможность вернуться в игру(через какуюто команду)
+    //команда безлимитная, ограничиваться будет в самом твиче(типа баллы канала условные).
     private players: Map<string, Player> = new Map();
+
+
     private enemies: Enemy[] = [];
     private attackSlots: AttackSlot[] = [];          // 3 слота атаки
     private defenseSlots: DefenseSlot[] = [];        // 4 слота защиты
@@ -30,9 +35,15 @@ export class GameController {
     private isTimerRunning: boolean = false;
 
     // Константы для расчётов
-    private readonly LATENCY_THRESHOLD = 200;
+    private readonly LATENCY_THRESHOLD = 50;
     private readonly BLACKOUT_DURATION = 2;          // как в исходном коде
     private readonly BASE_ENEMY_DAMAGE = 30;          // базовый урон врага (можно менять от хопа)
+
+    private introContainer: HTMLElement | null = null;
+    private resultContainer: HTMLElement | null = null;
+
+    private readonly PREP_DURATION_MS: number = 5000;   // длительность подготовительного этапа
+    private readonly RESULT_DURATION_MS: number = 7000; // время показа окна результатов (можно изменить отдельно)
 
     constructor() {
         this.resetBuffer();
@@ -77,30 +88,301 @@ export class GameController {
 
     // В prepareGame добавляем вызов resetGame
     public prepareGame() {
-        console.log("prepareGame")
-        this.resetGame(); // <-- сбрасываем всё перед новой игрой
-        this.showIntro();
+        console.log("prepareGame");
+
+        // Если висит окно результата, убираем его
+        if (this.resultContainer) {
+            this.resultContainer.remove();
+            this.resultContainer = null;
+        }
+
+        this.resetGame();
+        this.showIntro();  // <-- добавлено
         this.isGameRunning = true;
         this.isPrepStage = true;
         setTimeout(() => {
             this.isPrepStage = false;
-            if (this.players.size == 0) return;
-            this.hideIntro();
+            this.hideIntro();    // <-- скрываем окно вступления
+            if (this.players.size == 0) {
+                this.log("SYSTEM", "NO NODES DETECTED. ABORTING MISSION.");
+                this.isGameRunning = false;
+                return;
+            }
+            
             this.startGame();
             this.log("SYSTEM", "INFILTRATION STARTED. HOP 1 REACHED.");
             console.log("interval triggered")
-        }, 5000);
+        }, this.PREP_DURATION_MS);
     }
 
-    showIntro() { return; }
-    hideIntro() { return; }
+    //метод должен отрисовывать чтото вроде стартового окна для игры, до отрисовки основного интерфейса, стилизованное под олдскульный хакерский терминал, 
+    // который какбы инициализирует соединение  с защищенным архивом или удаленным сервером(придумать).
+    //пока идет условная загрузка - массив игроков наполняется написавшими в чат.
+    //длина загрузки должна равняться длине таймаута из метода  prepareGame() (если нужно можно изменить prepareGame)
+    private showIntro() {
+        // Удаляем предыдущее окно, если есть
+        if (this.introContainer) this.introContainer.remove();
+
+        const container = document.createElement('div');
+        container.id = 'intro-terminal';
+        container.style.position = 'fixed';
+        container.style.top = '50%';
+        container.style.left = '50%';
+        container.style.transform = 'translate(-50%, -50%)';
+        container.style.width = 'min(80vw, 600px)';
+        container.style.backgroundColor = '#0a0f0a';
+        container.style.border = '3px solid #0f0';
+        container.style.borderRadius = '5px';
+        container.style.color = '#0f0';
+        container.style.fontFamily = '"Courier New", monospace';
+        container.style.padding = '20px';
+        container.style.zIndex = '10000';
+        container.style.boxShadow = '0 0 30px #0f0';
+        container.style.opacity = '0';
+        container.style.transition = 'opacity 0.5s';
+
+        // ASCII-art заголовок
+        const ascii = `
+    ╔══════════════════════════════╗
+    ║  ██╗  ██╗ █████╗  ██████╗██╗ ██╗███████╗██████╗  ║
+    ║  ██║  ██║██╔══██╗██╔════╝██║ ██║██╔════╝██╔══██╗ ║
+    ║  ███████║███████║██║     ███████║█████╗  ██████╔╝ ║
+    ║  ██╔══██║██╔══██║██║     ██╔══██║██╔══╝  ██╔══██╗ ║
+    ║  ██║  ██║██║  ██║╚██████╗██║  ██║███████╗██║  ██║ ║
+    ║  ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ║
+    ╚══════════════════════════════╝
+    `;
+        const pre = document.createElement('pre');
+        pre.style.margin = '0 0 15px 0';
+        pre.style.fontSize = 'clamp(8px, 2vw, 14px)';
+        pre.style.lineHeight = '1.2';
+        pre.style.textAlign = 'center';
+        pre.innerText = ascii;
+        container.appendChild(pre);
+
+        // Статусные сообщения
+        const msgDiv = document.createElement('div');
+        msgDiv.style.marginBottom = '20px';
+        msgDiv.style.minHeight = '80px';
+        container.appendChild(msgDiv);
+
+        // Прогресс-бар
+        const progressContainer = document.createElement('div');
+        progressContainer.style.width = '100%';
+        progressContainer.style.height = '20px';
+        progressContainer.style.backgroundColor = '#003300';
+        progressContainer.style.border = '1px solid #0f0';
+        progressContainer.style.marginTop = '15px';
+        const progressBar = document.createElement('div');
+        progressBar.style.width = '0%';
+        progressBar.style.height = '100%';
+        progressBar.style.backgroundColor = '#0f0';
+        progressBar.style.transition = `width ${this.PREP_DURATION_MS}ms linear`;
+        progressContainer.appendChild(progressBar);
+        container.appendChild(progressContainer);
+
+        document.body.appendChild(container);
+        this.introContainer = container;
+
+        // Анимация появления
+        setTimeout(() => { container.style.opacity = '1'; }, 10);
+
+        // Последовательное отображение сообщений
+        const messages = [
+            "> INITIALIZING SECURE UPLINK...",
+            "> AUTHENTICATING WITH ARCHIVE SERVER...",
+            "> DECRYPTING SESSION KEY...",
+            "> BYPASSING FIREWALL...",
+            "> CONNECTION ESTABLISHED. AWAITING NODES..."
+        ];
+
+        let index = 0;
+        const interval = setInterval(() => {
+            if (index < messages.length) {
+                const line = document.createElement('div');
+                line.innerText = messages[index];
+                line.style.opacity = '0';
+                line.style.transition = 'opacity 0.3s';
+                msgDiv.appendChild(line);
+                setTimeout(() => line.style.opacity = '1', 10);
+                index++;
+            } else {
+                clearInterval(interval);
+            }
+        }, 600);
+
+        // Запуск прогресс-бара
+        setTimeout(() => {
+            progressBar.style.width = '100%';
+        }, 100);
+    }
+
+    //этот метод по задумке толжен скрывать окно showIntro() когда стригерится таймаут из prepareGame(подумай как можно сделать эти 3 метода правильно)
+    private hideIntro() {
+        if (this.introContainer) {
+            this.introContainer.style.opacity = '0';
+            setTimeout(() => {
+                if (this.introContainer?.parentNode) {
+                    this.introContainer.remove();
+                    this.introContainer = null;
+                }
+            }, 500);
+        }
+    }
+
+    //это окно должно отрисовываться вместо интерфейса игры по ее завершению, на какоето определенное непродолжительное время.
+    // внутри окна должна быть асци картинка "побежденного сервера"(предложи пару вариантов ) и таблица лидеров.
+    private showResult() {
+        if (this.resultContainer) this.resultContainer.remove();
+
+        const container = document.createElement('div');
+        container.id = 'result-terminal';
+        container.style.position = 'fixed';
+        container.style.top = '50%';
+        container.style.left = '50%';
+        container.style.transform = 'translate(-50%, -50%)';
+        container.style.width = 'min(80vw, 600px)';
+        container.style.backgroundColor = '#0a0f0a';
+        container.style.border = '3px solid #f00';
+        container.style.borderRadius = '5px';
+        container.style.color = '#f00';
+        container.style.fontFamily = '"Courier New", monospace';
+        container.style.padding = '20px';
+        container.style.zIndex = '10000';
+        container.style.boxShadow = '0 0 30px #f00';
+        container.style.opacity = '0';
+        container.style.transition = 'opacity 0.5s';
+
+        // Выбор случайного ASCII-арта
+        const artworks = [
+            // MAINFRAME BREACHED
+            `
+    ╔════════════════════════════╗
+    ║  ╔═╗╔═╗╔╦╗╔═╗╔╗╔╔═╗╔╦╗    ║
+    ║  ║ ║╠═╣ ║ ║╣ ║║║║╣  ║     ║
+    ║  ╚═╝╩ ╩ ╩ ╚═╝╝╚╝╚═╝ ╩     ║
+    ║        BREACHED           ║
+    ╚════════════════════════════╝
+        `,
+            // SERVER SHUTDOWN
+            `
+    ┌────────────────────────────┐
+    │  ░░░░░░░░░░░░░░░░░░░░░░░░  │
+    │  ░█▀▀░█▀█░█▀▄░█▀▀░█░█░░░░  │
+    │  ░█▀▀░█░█░█░█░█▀▀░▀▄▀░░░░  │
+    │  ░▀░░░▀▀▀░▀▀░░▀▀▀░░▀░░░░░  │
+    │     SHUTDOWN COMPLETE      │
+    └────────────────────────────┘
+        `,
+            // SYSTEM PURGED
+            `
+    ╔════════════════════════════╗
+    ║  ╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲  ║
+    ║  ╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱  ║
+    ║    SYSTEM PURGED           ║
+    ║  ╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲  ║
+    ╚════════════════════════════╝
+        `
+        ];
+        const selectedArt = artworks[Math.floor(Math.random() * artworks.length)];
+
+        const pre = document.createElement('pre');
+        pre.style.margin = '0 0 20px 0';
+        pre.style.fontSize = 'clamp(8px, 2vw, 14px)';
+        pre.style.lineHeight = '1.2';
+        pre.style.textAlign = 'center';
+        pre.style.color = '#f00';
+        pre.innerText = selectedArt;
+        container.appendChild(pre);
+
+        // Заголовок лидерборда
+        const title = document.createElement('h3');
+        title.innerText = '> TOP NODES CONTRIBUTION <';
+        title.style.textAlign = 'center';
+        title.style.margin = '10px 0';
+        title.style.color = '#f00';
+        container.appendChild(title);
+
+        // Таблица лидеров
+        const leaderList = document.createElement('div');
+        leaderList.style.marginTop = '15px';
+        leaderList.style.maxHeight = '200px';
+        leaderList.style.overflowY = 'auto';
+        leaderList.style.borderTop = '1px solid #f00';
+        leaderList.style.borderBottom = '1px solid #f00';
+        leaderList.style.padding = '5px 0';
+
+        // Сортируем игроков по contribution (убывание)
+        const sortedPlayers = Array.from(this.players.values())
+            .sort((a, b) => b.contribution - a.contribution);
+
+        sortedPlayers.forEach((p, idx) => {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.justifyContent = 'space-between';
+            row.style.padding = '2px 10px';
+            row.style.color = idx === 0 ? '#ff0' : '#f00';
+            row.innerHTML = `<span>${idx + 1}. ${p.name}</span><span>⭐ ${p.contribution}</span>`;
+            leaderList.appendChild(row);
+        });
+
+        container.appendChild(leaderList);
+
+        // Кнопка закрытия (опционально)
+        // const closeBtn = document.createElement('button');
+        // closeBtn.innerText = '[ CLOSE ]';
+        // closeBtn.style.background = 'none';
+        // closeBtn.style.border = '1px solid #f00';
+        // closeBtn.style.color = '#f00';
+        // closeBtn.style.fontFamily = 'inherit';
+        // closeBtn.style.padding = '5px 15px';
+        // closeBtn.style.marginTop = '20px';
+        // closeBtn.style.cursor = 'pointer';
+        // closeBtn.style.display = 'block';
+        // closeBtn.style.marginLeft = 'auto';
+        // closeBtn.style.marginRight = 'auto';
+        // closeBtn.onclick = () => {
+        //     if (this.resultContainer) {
+        //         this.resultContainer.style.opacity = '0';
+        //         setTimeout(() => this.resultContainer?.remove(), 500);
+        //         this.resultContainer = null;
+        //     }
+        // };
+        // container.appendChild(closeBtn);
+
+        document.body.appendChild(container);
+        this.resultContainer = container;
+
+        // Анимация появления
+        setTimeout(() => { container.style.opacity = '1'; }, 10);
+
+        // Автоматическое закрытие через 7 секунд
+        setTimeout(() => {
+            if (this.resultContainer) {
+                this.resultContainer.style.opacity = '0';
+                setTimeout(() => {
+                    if (this.resultContainer?.parentNode) {
+                        this.resultContainer.remove();
+                        this.resultContainer = null;
+                    }
+                }, 500);
+            }
+        }, this.RESULT_DURATION_MS);
+    }
 
     addPlayer(userId: any, userName: any) {
         let player = this.players.get(userId);
         if (!player) {
-            player = { id: userId, name: userName, integrity: 100, latency: 0, state: 'active', blackoutTimer: 0 };
+            player = {
+                id: userId,
+                name: userName,
+                integrity: 100,
+                latency: 0,
+                state: 'active',
+                blackoutTimer: 0,
+                contribution: 0  // <-- ДОБАВЛЕНО
+            };
             this.players.set(userId, player);
-            // Показываем уведомление только для нового игрока
             this.renderNewPlayerJoining(player);
         }
     }
@@ -187,6 +469,7 @@ export class GameController {
         this.stopTimer();
         this.isGameRunning = false;
         this.cleanInterface();
+        this.showResult();   // <-- добавлено
     }
 
     private assignDefenseTargets() {
@@ -204,6 +487,10 @@ export class GameController {
     }
 
     // --- INPUT HANDLING (обновлён) ---
+    //необходимо изменить метод, чтобы он добавлял в команду игроков контрибуторов и также рассчитывал вес для каждого игрока контрибутора, 
+    // например если ты - сощздатель - у тебя всегда был самый большой вес
+    //если ты увеличил своей командой счетчтк комбо и сила твоей команды была выше - то твой вес становится самвым большим
+    //этот вес будет учавствовать в финальном рассчете очков 
     public handleInput(userId: string, userName: string, text: string) {
         if (!this.isGameRunning) return;
 
@@ -229,7 +516,7 @@ export class GameController {
         if (!commandDef) return; // не команда
 
         // Определяем тип команды по тегам
-        const isDefense = commandDef.tags.has('defense');
+        const isDefense = commandDef.tags.has('защитная');
 
         // Поиск параметров-множителей
         let totalMultiplier = 1.0;
@@ -250,9 +537,9 @@ export class GameController {
 
         // Выбор слотов в зависимости от типа команды
         if (isDefense) {
-            this.processDefenseCommand(commandDef.name, finalPower, userName, targetDefenseSlot);
+            this.processDefenseCommand(commandDef.name, finalPower, userId, userName, targetDefenseSlot);
         } else {
-            this.processAttackCommand(commandDef.name, finalPower, userName);
+            this.processAttackCommand(commandDef.name, finalPower, userId, userName);
         }
 
         // Начисление latency
@@ -269,15 +556,13 @@ export class GameController {
         this.updateUI();
     }
 
-    // Обработка атакующих команд (без изменений, но вынесено для читаемости)
-    private processAttackCommand(cmdName: string, power: number, userName: string) {
+    private processAttackCommand(cmdName: string, power: number, userId: string, userName: string) {
         const existingSlotIndex = this.attackSlots.findIndex(slot => slot.commandName === cmdName);
         if (existingSlotIndex !== -1) {
-            // Слияние
             const slot = this.attackSlots[existingSlotIndex];
             slot.totalPower += power;
-            const currentContrib = slot.powerMap.get(userName) || 0;
-            slot.powerMap.set(userName, currentContrib + power);
+            const currentContrib = slot.powerMap.get(userId) || 0;      // <-- ключ userId
+            slot.powerMap.set(userId, currentContrib + power);          // <-- ключ userId
             slot.contributors.push(userName);
             slot.level = Math.min(4, Math.floor(slot.totalPower / 50) + 1);
             this.log("SYNERGY", `> Атака ${cmdName} усилена. Мощность: ${slot.totalPower} (ур.${slot.level})`);
@@ -292,7 +577,7 @@ export class GameController {
                 contributors: [userName],
                 commandName: cmdName,
                 totalPower: power,
-                powerMap: new Map([[userName, power]])
+                powerMap: new Map([[userId, power]])
             };
             this.log("SYNERGY", `> Атака ${cmdName} помещена в пустой слот A${emptyIndex + 1} (${power})`);
             return;
@@ -313,7 +598,7 @@ export class GameController {
                 contributors: [userName],
                 commandName: cmdName,
                 totalPower: power,
-                powerMap: new Map([[userName, power]])
+                powerMap: new Map([[userId, power]])
             };
             this.log("SYNERGY", `> Атака ${cmdName} вытеснила слабейшую в A${minIndex + 1} (${power})`);
         } else {
@@ -322,7 +607,7 @@ export class GameController {
     }
 
     // Обработка защитных команд
-    private processDefenseCommand(cmdName: string, power: number, userName: string, targetSlot: number | null) {
+    private processDefenseCommand(cmdName: string, power: number, userId: string, userName: string, targetSlot: number | null) {
         if (targetSlot !== null) {
             // Целевой слот указан
             if (targetSlot < 0 || targetSlot >= this.defenseSlots.length) return;
@@ -330,8 +615,8 @@ export class GameController {
             if (slot.commandName === cmdName) {
                 // Слияние
                 slot.totalPower += power;
-                const currentContrib = slot.powerMap.get(userName) || 0;
-                slot.powerMap.set(userName, currentContrib + power);
+                const currentContrib = slot.powerMap.get(userId) || 0;
+                slot.powerMap.set(userId, currentContrib + power);
                 slot.contributors.push(userName);
                 slot.level = Math.min(4, Math.floor(slot.totalPower / 50) + 1);
                 this.log("SYNERGY", `> Защита ${cmdName} усилена в D${targetSlot + 1}. Мощность: ${slot.totalPower} (ур.${slot.level})`);
@@ -342,7 +627,7 @@ export class GameController {
                     contributors: [userName],
                     commandName: cmdName,
                     totalPower: power,
-                    powerMap: new Map([[userName, power]])
+                    powerMap: new Map([[userId, power]])
                 };
                 this.log("SYNERGY", `> Защита ${cmdName} помещена в D${targetSlot + 1} (${power})`);
             } else {
@@ -353,7 +638,7 @@ export class GameController {
                         contributors: [userName],
                         commandName: cmdName,
                         totalPower: power,
-                        powerMap: new Map([[userName, power]])
+                        powerMap: new Map([[userId, power]])
                     };
                     this.log("SYNERGY", `> Защита ${cmdName} вытеснила ${slot.commandName} в D${targetSlot + 1} (${power})`);
                 } else {
@@ -366,8 +651,8 @@ export class GameController {
             if (existingSlotIndex !== -1) {
                 const slot = this.defenseSlots[existingSlotIndex];
                 slot.totalPower += power;
-                const currentContrib = slot.powerMap.get(userName) || 0;
-                slot.powerMap.set(userName, currentContrib + power);
+                const currentContrib = slot.powerMap.get(userId) || 0;
+                slot.powerMap.set(userId, currentContrib + power);
                 slot.contributors.push(userName);
                 slot.level = Math.min(4, Math.floor(slot.totalPower / 50) + 1);
                 this.log("SYNERGY", `> Защита ${cmdName} усилена в D${existingSlotIndex + 1}. Мощность: ${slot.totalPower} (ур.${slot.level})`);
@@ -381,7 +666,7 @@ export class GameController {
                     contributors: [userName],
                     commandName: cmdName,
                     totalPower: power,
-                    powerMap: new Map([[userName, power]])
+                    powerMap: new Map([[userId, power]])
                 };
                 this.log("SYNERGY", `> Защита ${cmdName} помещена в пустой слот D${emptyIndex + 1} (${power})`);
                 return;
@@ -401,7 +686,7 @@ export class GameController {
                     contributors: [userName],
                     commandName: cmdName,
                     totalPower: power,
-                    powerMap: new Map([[userName, power]])
+                    powerMap: new Map([[userId, power]])
                 };
                 this.log("SYNERGY", `> Защита ${cmdName} вытеснила слабейшую в D${minIndex + 1} (${power})`);
             } else {
@@ -410,7 +695,46 @@ export class GameController {
         }
     }
 
+    private awardContributions() {
+        // Начисление за атаку
+        this.attackSlots.forEach(slot => {
+            if (slot.totalPower > 0) {
+                slot.powerMap.forEach((power, userId) => {
+                    const player = this.players.get(userId);
+                    if (player) {
+                        const points = Math.floor(power / 10);  // 1 очко за каждые 10 мощности
+                        if (points > 0) {
+                            player.contribution += points;
+                            this.log("SYSTEM", `> Игрок ${player.name} получает ${points} очков за атаку (вклад ${power})`);
+                        }
+                    }
+                });
+            }
+        });
+
+        // Начисление за защиту
+        this.defenseSlots.forEach(slot => {
+            if (slot.totalPower > 0) {
+                slot.powerMap.forEach((power, userId) => {
+                    const player = this.players.get(userId);
+                    if (player) {
+                        const points = Math.floor(power / 10);
+                        if (points > 0) {
+                            player.contribution += points;
+                            this.log("SYSTEM", `> Игрок ${player.name} получает ${points} очков за защиту (вклад ${power})`);
+                        }
+                    }
+                });
+            }
+        });
+    }
+
     // --- RESOLUTION PHASE (обновлена защита) ---
+
+    //нужно изменить функцию таким образом чтобы игрокам начислялись очки за выполнение команд
+    //только тем игрокам кто указан в команде как контрибутор
+    // только по командам которые были записаны в слоты атаки защиты
+    // необходимо также придумать, каким образом вес будет конвертироваться в очки.
     private resolveTurn() {
         this.stopTimer();
         this.log("SYSTEM", "EXECUTING BUFFER...");
@@ -462,6 +786,8 @@ export class GameController {
                 this.log("SYSTEM", `NODE ${player.name} TERMINATED.`);
             }
         });
+
+        this.awardContributions();
 
         // 3. Очистка мёртвых врагов
         this.enemies = this.enemies.filter(e => e.integrity > 0);
@@ -595,6 +921,7 @@ export class GameController {
         });
     }
 
+
     private renderPlayers() {
         const list = document.getElementById("player-list");
         if (!list) return;
@@ -606,12 +933,13 @@ export class GameController {
             div.className = `player-card ${p.state}`;
             let status = p.state === 'active' ? '' : `[${p.state.toUpperCase()}]`;
             div.innerHTML = `
-                <div style="display:flex; justify-content:space-between;">
-                    <span>${p.name} ${status}</span>
-                    <span>${p.latency}ms</span>
-                    <span>${p.integrity}%</span>
-                </div>
-            `;
+            <div style="display:flex; justify-content:space-between;">
+                <span>${p.name} ${status}</span>
+                <span>${p.latency}ms</span>
+                <span>${p.integrity}%</span>
+                <span>⭐ ${p.contribution}</span>   <!-- <-- ДОБАВЛЕНО -->
+            </div>
+        `;
             list.appendChild(div);
         });
     }
@@ -622,333 +950,197 @@ export class GameController {
     // несколько сообщений, полоса загрузки, асции картинка, можно сделать несколько сценариев и между ними переключаться чтобы не показывалось одно и то же.
     //также необходимо изменить все другие методы которые вызывают обновление ингтерфейса и добавить там проверку - если игрок только что присоединился - отрисовывать окно
     //если уже был - не рисовать 
-    // private renderNewPlayerJoining(player: Player) {
-    //     // Создаём контейнер
-    //     const container = document.createElement('div');
-    //     container.id = 'player-join-notification';
-    //     container.style.position = 'fixed';
-    //     container.style.bottom = '20px';
-    //     container.style.right = '20px';
-    //     container.style.width = '300px';
-    //     container.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
-    //     container.style.border = '2px solid #0f0';
-    //     container.style.color = '#0f0';
-    //     container.style.fontFamily = 'Courier New, monospace';
-    //     container.style.padding = '10px';
-    //     container.style.zIndex = '9999';
-    //     container.style.boxShadow = '0 0 20px rgba(0, 255, 0, 0.5)';
-    //     container.style.overflow = 'hidden';
-    //     container.style.opacity = '0';
-    //     container.style.transition = 'opacity 0.3s';
-
-    //     // Несколько сценариев (ASCII + сообщения)
-    //     const scenarios = [
-    //         {
-    //             ascii: [
-    //                 "    _____",
-    //                 "   /     \\",
-    //                 "   | () |",
-    //                 "    \\___/   ",
-    //                 "   CONNECT"
-    //             ],
-    //             messages: [
-    //                 "> ESTABLISHING SECURE LINK...",
-    //                 "> HANDSHAKE PROTOCOL v2.3",
-    //                 "> AUTHENTICATING NODE...",
-    //                 `> ACCESS GRANTED: ${player.name}`,
-    //                 "> SYNC COMPLETE."
-    //             ]
-    //         },
-    //         {
-    //             ascii: [
-    //                 "   ╔════════╗",
-    //                 "   ║ █▀▀ █▀▀ ║",
-    //                 "   ║ █▀▀ ▀▀█ ║",
-    //                 "   ╚════════╝",
-    //                 "  TERMINAL"
-    //             ],
-    //             messages: [
-    //                 "> INITIALIZING UPLINK...",
-    //                 "> DECRYPTING SESSION KEY",
-    //                 "> BYPASSING FIREWALL...",
-    //                 `> NODE ${player.name} ONLINE`,
-    //                 "> READY."
-    //             ]
-    //         },
-    //         {
-    //             ascii: [
-    //                 "  ┌─┐┌─┐┌┬┐┌─┐",
-    //                 "  │  │ │ ││├┤ ",
-    //                 "  └─┘└─┘─┴┘└─┘",
-    //                 "  CYPHER"
-    //             ],
-    //             messages: [
-    //                 "> WAKING UP NEURAL INTERFACE...",
-    //                 "> LOADING CHAOS DRIVER...",
-    //                 `> ESTABLISHING LINK WITH ${player.name}`,
-    //                 "> ENCRYPTION: 4096-bit RSA",
-    //                 "> CONNECTION STABLE."
-    //             ]
-    //         }
-    //     ];
-
-    //     const scenario = scenarios[Math.floor(Math.random() * scenarios.length)];
-
-    //     // ASCII art
-    //     const asciiDiv = document.createElement('pre');
-    //     asciiDiv.style.margin = '0 0 10px 0';
-    //     asciiDiv.style.fontSize = '10px';
-    //     asciiDiv.style.lineHeight = '1.2';
-    //     asciiDiv.style.textAlign = 'center';
-    //     asciiDiv.innerText = scenario.ascii.join('\n');
-    //     container.appendChild(asciiDiv);
-
-    //     // Область сообщений
-    //     const msgDiv = document.createElement('div');
-    //     msgDiv.style.marginBottom = '10px';
-    //     msgDiv.style.minHeight = '80px';
-    //     container.appendChild(msgDiv);
-
-    //     // Прогресс-бар
-    //     const progressContainer = document.createElement('div');
-    //     progressContainer.style.width = '100%';
-    //     progressContainer.style.height = '10px';
-    //     progressContainer.style.backgroundColor = '#003300';
-    //     progressContainer.style.border = '1px solid #0f0';
-    //     progressContainer.style.marginTop = '10px';
-    //     const progressBar = document.createElement('div');
-    //     progressBar.style.width = '0%';
-    //     progressBar.style.height = '100%';
-    //     progressBar.style.backgroundColor = '#0f0';
-    //     progressBar.style.transition = 'width 2s linear';
-    //     progressContainer.appendChild(progressBar);
-    //     container.appendChild(progressContainer);
-
-    //     document.body.appendChild(container);
-
-    //     // Анимация появления
-    //     setTimeout(() => { container.style.opacity = '1'; }, 10);
-
-    //     // Поэтапное отображение сообщений
-    //     let msgIndex = 0;
-    //     const interval = setInterval(() => {
-    //         if (msgIndex < scenario.messages.length) {
-    //             const line = document.createElement('div');
-    //             line.innerText = scenario.messages[msgIndex];
-    //             line.style.marginBottom = '2px';
-    //             line.style.opacity = '0';
-    //             line.style.transition = 'opacity 0.3s';
-    //             msgDiv.appendChild(line);
-    //             setTimeout(() => { line.style.opacity = '1'; }, 10);
-    //             msgIndex++;
-    //         } else {
-    //             clearInterval(interval);
-    //         }
-    //     }, 500);
-
-    //     // Запускаем прогресс-бар
-    //     setTimeout(() => {
-    //         progressBar.style.width = '100%';
-    //     }, 100);
-
-    //     // Удаляем окно через 4 секунды
-    //     setTimeout(() => {
-    //         container.style.opacity = '0';
-    //         setTimeout(() => {
-    //             if (container.parentNode) container.parentNode.removeChild(container);
-    //         }, 300);
-    //     }, 4000);
-    // }
+    
 
     private renderNewPlayerJoining(player: Player) {
-    // Создаём контейнер
-    const container = document.createElement('div');
-    container.id = 'player-join-notification';
-    container.style.position = 'fixed';
-    container.style.width = '25vw';
-    container.style.maxWidth = '300px';
-    container.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
-    container.style.border = '2px solid #0f0';
-    container.style.color = '#0f0';
-    container.style.fontFamily = 'Courier New, monospace';
-    container.style.padding = '10px';
-    container.style.zIndex = '9999';
-    container.style.boxShadow = '0 0 20px rgba(0, 255, 0, 0.5)';
-    container.style.overflow = 'hidden';
-    container.style.opacity = '0';
-    container.style.transition = 'opacity 0.3s';
-    container.style.boxSizing = 'border-box';
-
-    // Несколько сценариев (ASCII + сообщения)
-    const scenarios = [
-        {
-            ascii: [
-                "    _____",
-                "   /     \\",
-                "   | () |",
-                "    \\___/   ",
-                "   CONNECT"
-            ],
-            messages: [
-                "> ESTABLISHING SECURE LINK...",
-                "> HANDSHAKE PROTOCOL v2.3",
-                "> AUTHENTICATING NODE...",
-                `> ACCESS GRANTED: ${player.name}`,
-                "> SYNC COMPLETE."
-            ]
-        },
-        {
-            ascii: [
-                "   ╔════════╗",
-                "   ║ █▀▀ █▀▀ ║",
-                "   ║ █▀▀ ▀▀█ ║",
-                "   ╚════════╝",
-                "  TERMINAL"
-            ],
-            messages: [
-                "> INITIALIZING UPLINK...",
-                "> DECRYPTING SESSION KEY",
-                "> BYPASSING FIREWALL...",
-                `> NODE ${player.name} ONLINE`,
-                "> READY."
-            ]
-        },
-        {
-            ascii: [
-                "  ┌─┐┌─┐┌┬┐┌─┐",
-                "  │  │ │ ││├┤ ",
-                "  └─┘└─┘─┴┘└─┘",
-                "  CYPHER"
-            ],
-            messages: [
-                "> WAKING UP NEURAL INTERFACE...",
-                "> LOADING CHAOS DRIVER...",
-                `> ESTABLISHING LINK WITH ${player.name}`,
-                "> ENCRYPTION: 4096-bit RSA",
-                "> CONNECTION STABLE."
-            ]
-        }
-    ];
-
-    const scenario = scenarios[Math.floor(Math.random() * scenarios.length)];
-
-    // ASCII art
-    const asciiDiv = document.createElement('pre');
-    asciiDiv.style.margin = '0 0 10px 0';
-    asciiDiv.style.fontSize = 'clamp(8px, 2vw, 12px)';
-    asciiDiv.style.lineHeight = '1.2';
-    asciiDiv.style.textAlign = 'center';
-    asciiDiv.style.whiteSpace = 'pre-wrap';
-    asciiDiv.style.wordBreak = 'break-all';
-    asciiDiv.innerText = scenario.ascii.join('\n');
-    container.appendChild(asciiDiv);
-
-    // Область сообщений
-    const msgDiv = document.createElement('div');
-    msgDiv.style.marginBottom = '10px';
-    msgDiv.style.minHeight = '60px';
-    msgDiv.style.fontSize = 'clamp(10px, 2.5vw, 14px)';
-    container.appendChild(msgDiv);
-
-    // Создаём все строки сообщений заранее, но скрытыми (opacity 0)
-    const messageLines: HTMLDivElement[] = [];
-    scenario.messages.forEach(msg => {
-        const line = document.createElement('div');
-        line.innerText = msg;
-        line.style.marginBottom = '2px';
-        line.style.opacity = '0';
-        line.style.transition = 'opacity 0.3s';
-        msgDiv.appendChild(line);
-        messageLines.push(line);
-    });
-
-    // Прогресс-бар
-    const progressContainer = document.createElement('div');
-    progressContainer.style.width = '100%';
-    progressContainer.style.height = '8px';
-    progressContainer.style.backgroundColor = '#003300';
-    progressContainer.style.border = '1px solid #0f0';
-    progressContainer.style.marginTop = '10px';
-    const progressBar = document.createElement('div');
-    progressBar.style.width = '0%';
-    progressBar.style.height = '100%';
-    progressBar.style.backgroundColor = '#0f0';
-    progressBar.style.transition = 'width 2s linear';
-    progressContainer.appendChild(progressBar);
-    container.appendChild(progressContainer);
-
-    // Добавляем контейнер в DOM (пока невидимый)
-    document.body.appendChild(container);
-
-    // Получаем размеры контейнера и окна
-    const containerWidth = container.offsetWidth;
-    const containerHeight = container.offsetHeight;
-    const windowWidth = window.innerWidth;
-    const windowHeight = window.innerHeight;
-
-    // Случайный выбор стороны
-    const sides = ['left', 'right', 'top', 'bottom'];
-    const selectedSide = sides[Math.floor(Math.random() * sides.length)];
-
-    // Функция для ограничения значения в пределах [min, max]
-    const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
-    // Устанавливаем позицию в зависимости от стороны со случайным смещением
-    switch (selectedSide) {
-        case 'left':
-            container.style.left = '20px';
-            // Случайная позиция по вертикали с учётом высоты контейнера
-            let randomTopLeft = Math.random() * (windowHeight - containerHeight);
-            randomTopLeft = clamp(randomTopLeft, 0, windowHeight - containerHeight);
-            container.style.top = randomTopLeft + 'px';
-            break;
-        case 'right':
-            container.style.right = '20px';
-            let randomTopRight = Math.random() * (windowHeight - containerHeight);
-            randomTopRight = clamp(randomTopRight, 0, windowHeight - containerHeight);
-            container.style.top = randomTopRight + 'px';
-            break;
-        case 'top':
-            container.style.top = '20px';
-            let randomLeftTop = Math.random() * (windowWidth - containerWidth);
-            randomLeftTop = clamp(randomLeftTop, 0, windowWidth - containerWidth);
-            container.style.left = randomLeftTop + 'px';
-            break;
-        case 'bottom':
-            container.style.bottom = '20px';
-            let randomLeftBottom = Math.random() * (windowWidth - containerWidth);
-            randomLeftBottom = clamp(randomLeftBottom, 0, windowWidth - containerWidth);
-            container.style.left = randomLeftBottom + 'px';
-            break;
-    }
-
-    // Анимация появления
-    setTimeout(() => { container.style.opacity = '1'; }, 10);
-
-    // Поэтапное отображение сообщений (делаем их видимыми)
-    let msgIndex = 0;
-    const interval = setInterval(() => {
-        if (msgIndex < messageLines.length) {
-            messageLines[msgIndex].style.opacity = '1';
-            msgIndex++;
-        } else {
-            clearInterval(interval);
-        }
-    }, 500);
-
-    // Запускаем прогресс-бар
-    setTimeout(() => {
-        progressBar.style.width = '100%';
-    }, 100);
-
-    // Удаляем окно через 4 секунды
-    setTimeout(() => {
+        // Создаём контейнер
+        const container = document.createElement('div');
+        container.id = 'player-join-notification';
+        container.style.position = 'fixed';
+        container.style.width = '25vw';
+        container.style.maxWidth = '300px';
+        container.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+        container.style.border = '2px solid #0f0';
+        container.style.color = '#0f0';
+        container.style.fontFamily = 'Courier New, monospace';
+        container.style.padding = '10px';
+        container.style.zIndex = '9999';
+        container.style.boxShadow = '0 0 20px rgba(0, 255, 0, 0.5)';
+        container.style.overflow = 'hidden';
         container.style.opacity = '0';
+        container.style.transition = 'opacity 0.3s';
+        container.style.boxSizing = 'border-box';
+
+        // Несколько сценариев (ASCII + сообщения)
+        const scenarios = [
+            {
+                ascii: [
+                    "    _____",
+                    "   /     \\",
+                    "   | () |",
+                    "    \\___/   ",
+                    "   CONNECT"
+                ],
+                messages: [
+                    "> ESTABLISHING SECURE LINK...",
+                    "> HANDSHAKE PROTOCOL v2.3",
+                    "> AUTHENTICATING NODE...",
+                    `> ACCESS GRANTED: ${player.name}`,
+                    "> SYNC COMPLETE."
+                ]
+            },
+            {
+                ascii: [
+                    "   ╔════════╗",
+                    "   ║ █▀▀ █▀▀ ║",
+                    "   ║ █▀▀ ▀▀█ ║",
+                    "   ╚════════╝",
+                    "  TERMINAL"
+                ],
+                messages: [
+                    "> INITIALIZING UPLINK...",
+                    "> DECRYPTING SESSION KEY",
+                    "> BYPASSING FIREWALL...",
+                    `> NODE ${player.name} ONLINE`,
+                    "> READY."
+                ]
+            },
+            {
+                ascii: [
+                    "  ┌─┐┌─┐┌┬┐┌─┐",
+                    "  │  │ │ ││├┤ ",
+                    "  └─┘└─┘─┴┘└─┘",
+                    "  CYPHER"
+                ],
+                messages: [
+                    "> WAKING UP NEURAL INTERFACE...",
+                    "> LOADING CHAOS DRIVER...",
+                    `> ESTABLISHING LINK WITH ${player.name}`,
+                    "> ENCRYPTION: 4096-bit RSA",
+                    "> CONNECTION STABLE."
+                ]
+            }
+        ];
+
+        const scenario = scenarios[Math.floor(Math.random() * scenarios.length)];
+
+        // ASCII art
+        const asciiDiv = document.createElement('pre');
+        asciiDiv.style.margin = '0 0 10px 0';
+        asciiDiv.style.fontSize = 'clamp(8px, 2vw, 12px)';
+        asciiDiv.style.lineHeight = '1.2';
+        asciiDiv.style.textAlign = 'center';
+        asciiDiv.style.whiteSpace = 'pre-wrap';
+        asciiDiv.style.wordBreak = 'break-all';
+        asciiDiv.innerText = scenario.ascii.join('\n');
+        container.appendChild(asciiDiv);
+
+        // Область сообщений
+        const msgDiv = document.createElement('div');
+        msgDiv.style.marginBottom = '10px';
+        msgDiv.style.minHeight = '60px';
+        msgDiv.style.fontSize = 'clamp(10px, 2.5vw, 14px)';
+        container.appendChild(msgDiv);
+
+        // Создаём все строки сообщений заранее, но скрытыми (opacity 0)
+        const messageLines: HTMLDivElement[] = [];
+        scenario.messages.forEach(msg => {
+            const line = document.createElement('div');
+            line.innerText = msg;
+            line.style.marginBottom = '2px';
+            line.style.opacity = '0';
+            line.style.transition = 'opacity 0.3s';
+            msgDiv.appendChild(line);
+            messageLines.push(line);
+        });
+
+        // Прогресс-бар
+        const progressContainer = document.createElement('div');
+        progressContainer.style.width = '100%';
+        progressContainer.style.height = '8px';
+        progressContainer.style.backgroundColor = '#003300';
+        progressContainer.style.border = '1px solid #0f0';
+        progressContainer.style.marginTop = '10px';
+        const progressBar = document.createElement('div');
+        progressBar.style.width = '0%';
+        progressBar.style.height = '100%';
+        progressBar.style.backgroundColor = '#0f0';
+        progressBar.style.transition = 'width 2s linear';
+        progressContainer.appendChild(progressBar);
+        container.appendChild(progressContainer);
+
+        // Добавляем контейнер в DOM (пока невидимый)
+        document.body.appendChild(container);
+
+        // Получаем размеры контейнера и окна
+        const containerWidth = container.offsetWidth;
+        const containerHeight = container.offsetHeight;
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+
+        // Случайный выбор стороны
+        const sides = ['left', 'right', 'top', 'bottom'];
+        const selectedSide = sides[Math.floor(Math.random() * sides.length)];
+
+        // Функция для ограничения значения в пределах [min, max]
+        const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+        // Устанавливаем позицию в зависимости от стороны со случайным смещением
+        switch (selectedSide) {
+            case 'left':
+                container.style.left = '20px';
+                // Случайная позиция по вертикали с учётом высоты контейнера
+                let randomTopLeft = Math.random() * (windowHeight - containerHeight);
+                randomTopLeft = clamp(randomTopLeft, 0, windowHeight - containerHeight);
+                container.style.top = randomTopLeft + 'px';
+                break;
+            case 'right':
+                container.style.right = '20px';
+                let randomTopRight = Math.random() * (windowHeight - containerHeight);
+                randomTopRight = clamp(randomTopRight, 0, windowHeight - containerHeight);
+                container.style.top = randomTopRight + 'px';
+                break;
+            case 'top':
+                container.style.top = '20px';
+                let randomLeftTop = Math.random() * (windowWidth - containerWidth);
+                randomLeftTop = clamp(randomLeftTop, 0, windowWidth - containerWidth);
+                container.style.left = randomLeftTop + 'px';
+                break;
+            case 'bottom':
+                container.style.bottom = '20px';
+                let randomLeftBottom = Math.random() * (windowWidth - containerWidth);
+                randomLeftBottom = clamp(randomLeftBottom, 0, windowWidth - containerWidth);
+                container.style.left = randomLeftBottom + 'px';
+                break;
+        }
+
+        // Анимация появления
+        setTimeout(() => { container.style.opacity = '1'; }, 10);
+
+        // Поэтапное отображение сообщений (делаем их видимыми)
+        let msgIndex = 0;
+        const interval = setInterval(() => {
+            if (msgIndex < messageLines.length) {
+                messageLines[msgIndex].style.opacity = '1';
+                msgIndex++;
+            } else {
+                clearInterval(interval);
+            }
+        }, 500);
+
+        // Запускаем прогресс-бар
         setTimeout(() => {
-            if (container.parentNode) container.parentNode.removeChild(container);
-        }, 300);
-    }, 4000);
-}
+            progressBar.style.width = '100%';
+        }, 100);
+
+        // Удаляем окно через 4 секунды
+        setTimeout(() => {
+            container.style.opacity = '0';
+            setTimeout(() => {
+                if (container.parentNode) container.parentNode.removeChild(container);
+            }, 300);
+        }, 4000);
+    }
 
     private log(type: "SYSTEM" | "SYNERGY", msg: string) {
         const div = document.getElementById(type === "SYSTEM" ? "system-log" : "synergy-log");
