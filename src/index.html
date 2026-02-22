@@ -162,11 +162,28 @@
         }
 
         /* --- FLAT RECTANGULAR SLOT --- */
+
         .slot-chip {
             width: 160px;
-            /* Широкий */
+            min-height: 60px;
+            /* увеличено для двух строк */
+            background: rgba(0, 15, 0, 1);
+            border: 1px solid var(--term-green);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 5px 10px;
+            position: relative;
+            box-shadow: 0 0 0 1px #0f0, 0 0 5px #0f0;
+            /* двойное обрамление */
+            border: none;
+            /* убираем обычную рамку, используем box-shadow */
+            z-index: 10;
+        }
+
+        /* .slot-chip {
+            width: 160px;
             height: 45px;
-            /* Плоский */
             background: rgba(0, 15, 0, 1);
             border: 1px solid var(--term-green);
             display: flex;
@@ -176,7 +193,7 @@
             position: relative;
             box-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
             z-index: 10;
-        }
+        } */
 
         .slot-header {
             display: flex;

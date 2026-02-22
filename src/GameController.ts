@@ -35,19 +35,28 @@ export class GameLogger {
 export class GameTimer {
     private interval: any = null;
     private _seconds: number = 15;
-    public onTick: (seconds: number) => void = () => {};
-    public onFinish: () => void = () => {};
+    public onTick: (seconds: number) => void = () => { };
+    public onFinish: () => void = () => { };
 
-    start(initialSeconds: number = 15): void {
+    start(seconds: number = 15): void {
         this.stop();
-        this._seconds = initialSeconds;
+        this._seconds = seconds;
         this.onTick(this._seconds);
+
+        if (seconds <= 0) {
+            // Если таймер 0, вызываем onFinish асинхронно в следующем тике
+            setTimeout(() => {
+                if (this.onFinish) this.onFinish();
+            }, 0);
+            return;
+        }
+
         this.interval = setInterval(() => {
             this._seconds--;
             this.onTick(this._seconds);
             if (this._seconds <= 0) {
                 this.stop();
-                this.onFinish();
+                if (this.onFinish) this.onFinish();
             }
         }, 1000);
     }
@@ -75,30 +84,9 @@ export class TurnResolver {
             blackoutDuration: number;
             baseEnemyDamage: number;
         }
-    ) {}
+    ) { }
 
-    resolve(hop: number, onHopComplete: () => void, onGameOver: () => void): void {
-        this.logger.logSystem('EXECUTING BUFFER...');
-
-        // Фаза 1: Атака игроков по врагам
-        this.slotManager.attackSlots.forEach((slot, index) => {
-            if (!slot.isEmpty()) {
-                const enemy = this.enemyManager.alive.find(e => e.slotIndex === index);
-                if (enemy) {
-                    const multipliers = [0, 1.0, 1.2, 1.5, 2.0];
-                    const slotMultiplier = multipliers[slot.level] || 1.0;
-                    const damage = Math.floor(slot.totalPower * slotMultiplier);
-                    enemy.takeDamage(damage);
-                    this.logger.logSystem(`> SLOT A${index + 1} HITS ${enemy.name} FOR ${damage} DMG (${slot.totalPower} * ${slotMultiplier})`);
-                }
-            }
-        });
-
-        const killed = this.enemyManager.alive.filter(e => !e.isAlive());
-        killed.forEach(e => this.logger.logSystem(`> ${e.name} DESTROYED.`));
-        this.enemyManager.clearDead();
-
-        // Фаза 2: Атака врагов по защитным слотам
+    private generateMobAttacks(hop: number): void {
         const attackCommands = CommandMap.filter(cmd => cmd.tags.has('атакующая'));
         const activePlayersCount = this.playerManager.activePlayers.length;
 
@@ -116,22 +104,63 @@ export class TurnResolver {
             if (Math.random() < 0.3 && ParametersMap.length > 0) {
                 const param = ParametersMap[Math.floor(Math.random() * ParametersMap.length)];
                 damage = Math.floor(damage * param.multiplier);
-                paramUsed = ` with ${param.name}`;
+                paramUsed = param.name;
             }
-
-            this.logger.logSystem(`> ${enemy.name} uses ${cmd.name}${paramUsed} for ${damage} damage`);
 
             if (enemy.attackType === AttackType.AOE) {
-                for (let slot = 0; slot < 4; slot++) {
-                    this.applyEnemyAttackToSlot(slot, damage, enemy.name);
-                }
+                this.slotManager.defenseSlots.forEach(slot => {
+                    slot.mobCommandName = cmd.name;
+                    slot.mobPower = damage;
+                    slot.mobParams = paramUsed;
+                });
             } else {
-                const targetSlot = Math.floor(Math.random() * 4);
-                this.applyEnemyAttackToSlot(targetSlot, damage, enemy.name);
+                const targetSlot = Math.floor(Math.random() * this.slotManager.defenseSlots.length);
+                const slot = this.slotManager.defenseSlots[targetSlot];
+                slot.mobCommandName = cmd.name;
+                slot.mobPower = damage;
+                slot.mobParams = paramUsed;
             }
         });
+    }
 
-        this.awardContributions();
+    public resolve(hop: number, onHopComplete: () => void, onGameOver: () => void): void {
+        this.logger.logSystem('EXECUTING BUFFER...');
+
+        const hadPlayerAttacks = this.slotManager.hasPlayerAttacks();
+        const hadPlayerDefense = this.slotManager.hasPlayerDefense();
+        const hadMobAttacks = this.slotManager.hasMobAttacks();
+
+        if (hadPlayerAttacks) {
+            this.slotManager.attackSlots.forEach((slot, index) => {
+                if (!slot.isEmpty()) {
+                    const enemy = this.enemyManager.alive.find(e => e.slotIndex === index);
+                    if (enemy) {
+                        const multipliers = [0, 1.0, 1.2, 1.5, 2.0];
+                        const slotMultiplier = multipliers[slot.level] || 1.0;
+                        const damage = Math.floor(slot.totalPower * slotMultiplier);
+                        enemy.takeDamage(damage);
+                        this.logger.logSystem(`> SLOT A${index + 1} HITS ${enemy.name} FOR ${damage} DMG (${slot.totalPower} * ${slotMultiplier})`);
+                    }
+                }
+            });
+        }
+
+        const killed = this.enemyManager.alive.filter(e => !e.isAlive());
+        killed.forEach(e => this.logger.logSystem(`> ${e.name} DESTROYED.`));
+        this.enemyManager.clearDead();
+        this.enemyManager.reindexEnemies();
+
+        if (hadMobAttacks) {
+            this.slotManager.defenseSlots.forEach((slot, index) => {
+                if (slot.mobPower > 0) {
+                    this.applyEnemyAttackToSlot(index, slot.mobPower, slot.mobCommandName, slot.mobParams);
+                }
+            });
+        }
+
+        if (hadPlayerAttacks || hadPlayerDefense) {
+            this.awardContributions();
+        }
 
         this.playerManager.updateAll(player => {
             if (player.state === PlayerState.ACTIVE) {
@@ -140,23 +169,31 @@ export class TurnResolver {
             player.updateBlackout();
         });
 
-        if (this.playerManager.activePlayers.length === 0) {
+        const gameOver = this.playerManager.activePlayers.length === 0;
+        const allEnemiesDead = this.enemyManager.alive.length === 0;
+
+        this.slotManager.clearAllSlots();
+
+        if (!gameOver && !allEnemiesDead) {
+            this.generateMobAttacks(hop);
+        }
+
+        if (gameOver) {
             this.logger.logSystem('GAME OVER. ALL NODES TERMINATED.');
             onGameOver();
             return;
         }
 
-        if (this.enemyManager.alive.length === 0) {
+        if (allEnemiesDead) {
             onHopComplete();
         }
-        // Если враги ещё есть, ход завершён, следующий запустится по таймеру (внешний код)
     }
 
-    private applyEnemyAttackToSlot(slotIndex: number, damage: number, attackerName: string): void {
+    private applyEnemyAttackToSlot(slotIndex: number, damage: number, cmdName: string, paramUsed: string): void {
         const defenseSlot = this.slotManager.defenseSlots[slotIndex];
         const playerId = defenseSlot.assignedPlayerId;
         if (!playerId) {
-            this.logger.logSystem(`> ${attackerName} attacks D${slotIndex + 1} but no player assigned.`);
+            this.logger.logSystem(`> MOB ATTACKS D${slotIndex + 1} WITH ${cmdName}${paramUsed ? ' +' + paramUsed : ''} BUT NO PLAYER ASSIGNED.`);
             return;
         }
 
@@ -167,18 +204,18 @@ export class TurnResolver {
         if (!defenseSlot.isEmpty()) {
             if (defenseSlot.totalPower >= damage) {
                 damageToPlayer = 0;
-                this.logger.logSystem(`> D${slotIndex + 1} fully blocked ${attackerName}'s attack (${defenseSlot.totalPower} ≥ ${damage})`);
+                this.logger.logSystem(`> D${slotIndex + 1} FULLY BLOCKED ${cmdName} (${defenseSlot.totalPower} ≥ ${damage})`);
             } else {
                 damageToPlayer = damage - defenseSlot.totalPower;
-                this.logger.logSystem(`> D${slotIndex + 1} partially blocked: ${damageToPlayer} dmg from ${attackerName} (${defenseSlot.totalPower} < ${damage})`);
+                this.logger.logSystem(`> D${slotIndex + 1} PARTIALLY BLOCKED: ${damageToPlayer} DMG FROM ${cmdName} (${defenseSlot.totalPower} < ${damage})`);
             }
         } else {
-            this.logger.logSystem(`> D${slotIndex + 1} has no defense, takes ${damageToPlayer} dmg from ${attackerName}`);
+            this.logger.logSystem(`> D${slotIndex + 1} HAS NO DEFENSE, TAKES ${damageToPlayer} DMG FROM ${cmdName}`);
         }
 
         if (damageToPlayer > 0) {
             player.takeDamage(damageToPlayer);
-            this.logger.logSystem(`> ${player.name} took ${damageToPlayer} damage from ${attackerName}`);
+            this.logger.logSystem(`> ${player.name} TOOK ${damageToPlayer} DAMAGE FROM ${cmdName}`);
             if (player.isTerminated()) {
                 this.logger.logSystem(`NODE ${player.name} TERMINATED.`);
             }
@@ -221,9 +258,13 @@ export class GameController {
     private readonly BASE_ENEMY_DAMAGE = 30;
     private readonly PREP_DURATION_MS = 5000;
     private readonly RESULT_DURATION_MS = 7000;
+    private readonly TURN_DURATION = 15;
 
     public isGameRunning: boolean = false;
     public isPrepStage: boolean = false;
+
+    public isTransitioning: boolean = false;
+
     private currentHop: number = 1;
 
     private playerManager: PlayerManager;
@@ -308,7 +349,7 @@ export class GameController {
     }
 
     public handleInput(userId: string, userName: string, text: string): void {
-        if (!this.isGameRunning || this.isPrepStage) return;
+        if (!this.isGameRunning || this.isPrepStage || this.isTransitioning) return;
 
         const player = this.playerManager.getPlayer(userId);
         if (!player) {
@@ -362,7 +403,7 @@ export class GameController {
             this.logger.logSystem(`> Игрок ${userName} перегрелся и ушёл в blackout на ${this.BLACKOUT_DURATION} хода`);
         }
 
-        this.ui.renderAll();
+        this.ui.renderAll(this.currentHop);
         this.logger.rawInput(userName, text);
     }
 
@@ -379,8 +420,7 @@ export class GameController {
         this.currentHop = 1;
         this.ui.hideInterface();
         this.clearLogs();
-        this.ui.setCurrentHop(1);
-        this.ui.renderAll();
+        this.ui.renderAll(this.currentHop);
     }
 
     private clearLogs(): void {
@@ -395,9 +435,9 @@ export class GameController {
     private startGame(): void {
         this.isGameRunning = true;
         this.ui.showInterface();
-        this.ui.setCurrentHop(this.currentHop);
+        this.ui.updateHopDisplay(this.currentHop);
         this.spawnEnemies();
-        this.startTurn();
+        this.startTurn(0);
         this.logger.logSystem('INFILTRATION STARTED. HOP 1 REACHED.');
     }
 
@@ -406,39 +446,82 @@ export class GameController {
         this.ui.renderEnemies();
     }
 
-    private startTurn(): void {
-        // Если игра уже не запущена, не начинаем новый ход
-        if (!this.isGameRunning) return;
+    // private startTurn(timerSeconds: number = this.TURN_DURATION): void {
+    //     // Если игра уже не запущена, не начинаем новый ход
+    //     if (!this.isGameRunning) return;
 
-        this.slotManager.reset();
+    //     this.slotManager.reset();
+    //     const targets = this.playerManager.getRandomActivePlayers(4);
+    //     this.slotManager.assignDefenseTargets(targets);
+    //     this.timer.start(timerSeconds);
+    //     this.ui.renderAll();
+    // }
+
+    private startTurn(timerSeconds: number = this.TURN_DURATION): void {
+        if (!this.isGameRunning) return;
         const targets = this.playerManager.getRandomActivePlayers(4);
         this.slotManager.assignDefenseTargets(targets);
-        this.timer.start(15);
-        this.ui.renderAll();
+        this.timer.start(timerSeconds);
+        this.ui.renderAll(this.currentHop);
     }
 
-    private resolveTurn(): void {
-        // Если игра завершена, ничего не делаем
-        if (!this.isGameRunning) return;
+    // private resolveTurn(): void {
+    //     // Если игра завершена, ничего не делаем
+    //     if (!this.isGameRunning) return;
 
+    //     this.timer.stop();
+    //     this.resolver.resolve(
+    //         this.currentHop,
+    //         () => this.advanceHop(),
+    //         () => this.endGame()
+    //     );
+    //     this.ui.renderAll();
+
+    //     // Если враги ещё есть и игра продолжается, планируем следующий ход
+    //     if (this.enemyManager.alive.length > 0 && this.isGameRunning) {
+    //         this.setTimeout(() => this.startTurn(), 2000);
+    //     }
+    // }
+
+    private resolveTurn(): void {
+        if (!this.isGameRunning) return;
         this.timer.stop();
+
         this.resolver.resolve(
             this.currentHop,
             () => this.advanceHop(),
             () => this.endGame()
         );
-        this.ui.renderAll();
 
-        // Если враги ещё есть и игра продолжается, планируем следующий ход
+        this.ui.renderAll(this.currentHop);
+
         if (this.enemyManager.alive.length > 0 && this.isGameRunning) {
             this.setTimeout(() => this.startTurn(), 2000);
         }
     }
 
-    private advanceHop(): void {
-        // Если игра уже не запущена, не продолжаем
-        if (!this.isGameRunning) return;
+    // private advanceHop(): void {
+    //     this.currentHop++;
+    //     if (this.currentHop > 4) {
+    //         this.logger.logSystem('MAINFRAME BREACHED. MISSION SUCCESS.');
+    //         this.endGame();
+    //         return;
+    //     }
 
+    //     this.logger.logSystem(`AREA CLEARED. MOVING TO HOP ${this.currentHop}...`);
+    //     this.playerManager.updateAll(p => {
+    //         if (!p.isTerminated()) {
+    //             p.reduceLatency(50);
+    //         }
+    //     });
+    //     this.ui.setCurrentHop(this.currentHop);
+    //     this.setTimeout(() => {
+    //         this.spawnEnemies();
+    //         this.startTurn(0);
+    //     }, 3000);
+    // }
+
+    private advanceHop(): void {
         this.currentHop++;
         if (this.currentHop > 4) {
             this.logger.logSystem('MAINFRAME BREACHED. MISSION SUCCESS.');
@@ -452,10 +535,19 @@ export class GameController {
                 p.reduceLatency(50);
             }
         });
-        this.ui.setCurrentHop(this.currentHop);
+        this.ui.updateHopDisplay(this.currentHop);
+
+        // Показываем окно перехода
+        const fromHop = this.currentHop - 1;
+        this.isTransitioning = true;
+        this.ui.showHopTransition(fromHop, this.currentHop);
+
+        // Через 3 секунды скрываем окно и продолжаем
         this.setTimeout(() => {
+            this.ui.hideHopTransition();
+            this.isTransitioning = false;
             this.spawnEnemies();
-            this.startTurn();
+            this.startTurn(0);
         }, 3000);
     }
 

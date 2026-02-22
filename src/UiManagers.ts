@@ -9,6 +9,7 @@ import { EnemyManager, PlayerManager, SlotManager } from "./Managers";
 export class UIManager {
     private introContainer: HTMLElement | null = null;
     private resultContainer: HTMLElement | null = null;
+    private hopTransitionContainer: HTMLElement | null = null;
     private currentHop: number = 1;
 
     constructor(
@@ -18,7 +19,7 @@ export class UIManager {
         private logger: GameLogger,
         private prepDuration: number,
         private resultDuration: number
-    ) {}
+    ) { }
 
     hideResultIfVisible(): void {
         if (this.resultContainer) {
@@ -27,9 +28,13 @@ export class UIManager {
         }
     }
 
-    setCurrentHop(hop: number): void {
-        this.currentHop = hop;
-        this.renderHops();
+    // setCurrentHop(hop: number): void {
+    //     this.currentHop = hop;
+    //     this.renderHops();
+    // }
+
+    public updateHopDisplay(currentHop: number): void {
+        this.renderHops(currentHop);
     }
 
     showIntro(onComplete?: () => void): void {
@@ -174,11 +179,11 @@ export class UIManager {
         if (el) el.innerText = seconds.toString();
     }
 
-    renderAll(): void {
+    public renderAll(currentHop: number): void {
         this.renderEnemies();
         this.renderBuffer();
         this.renderPlayers();
-        this.renderHops();
+        this.renderHops(currentHop);
     }
 
     renderEnemies(): void {
@@ -206,7 +211,15 @@ export class UIManager {
             const el = document.getElementById(`slot-a${i + 1}`);
             if (el) {
                 el.className = `slot filled-${slot.level}`;
-                el.innerText = `[A${i + 1}] ${slot.level > 0 ? `ATTACK X${slot.level} (${slot.totalPower})` : 'EMPTY'}`;
+                el.innerHTML = `
+            <div style="display: flex; justify-content: space-between;">
+                <span>[A${i + 1}]</span>
+                <span>${slot.level > 0 ? `ATTACK X${slot.level} (${slot.totalPower})` : 'EMPTY'}</span>
+            </div>
+            <div style="font-size: 0.7em; color: #55ff55; text-align: left; margin-top: 2px;">
+                ⚔️ mob defense placeholder
+            </div>
+        `;
             }
         });
 
@@ -216,13 +229,28 @@ export class UIManager {
                 const targetName = slot.assignedPlayerId ? this.playerManager.getPlayerName(slot.assignedPlayerId) : 'NONE';
                 el.className = `slot defense-slot filled-${slot.level}`;
                 if (slot.isEmpty()) el.classList.add('danger');
+
+                // Формируем строку с информацией об атаке моба
+                let mobInfo = '';
+                if (slot.mobPower > 0) {
+                    mobInfo = `⚔️ ${slot.mobCommandName}${slot.mobParams ? ' ' + slot.mobParams : ''} (${slot.mobPower})`;
+                } else {
+                    mobInfo = '⚔️ none';
+                }
+
                 el.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span>[D${i + 1}] ${targetName}</span>
                     <span>${slot.level > 0 ? `SHIELD X${slot.level} (${slot.totalPower})` : 'VULNERABLE'}</span>
-                `;
+                </div>
+                <div style="font-size: 0.7em; color: #ff5555; text-align: left; margin-top: 2px;">
+                    ${mobInfo}
+                </div>
+            `;
             }
         });
     }
+
 
     renderPlayers(): void {
         const list = document.getElementById('player-list');
@@ -246,11 +274,11 @@ export class UIManager {
         });
     }
 
-    renderHops(): void {
+    public renderHops(currentHop: number): void {
         for (let i = 1; i <= 4; i++) {
             const el = document.getElementById(`hop-${i}`);
             if (el) {
-                if (i === this.currentHop) el.classList.add('active');
+                if (i === currentHop) el.classList.add('active');
                 else el.classList.remove('active');
             }
         }
@@ -387,7 +415,7 @@ export class UIManager {
         const selectedArt = artworks[Math.floor(Math.random() * artworks.length)];
 
         const sorted = this.playerManager.allPlayers.sort((a, b) => b.contribution - a.contribution);
-        const leaderRows = sorted.map((p, idx) => 
+        const leaderRows = sorted.map((p, idx) =>
             `<div style="display:flex; justify-content:space-between; padding:2px 10px; color:${idx === 0 ? '#ff0' : '#f00'}">
                 <span>${idx + 1}. ${p.name}</span>
                 <span>⭐ ${p.contribution}</span>
@@ -493,5 +521,83 @@ export class UIManager {
                 el.style.left = clamp(Math.random() * (winW - width), 0, winW - width) + 'px';
                 break;
         }
+    }
+
+    public showHopTransition(fromHop: number, toHop: number): void {
+        if (this.hopTransitionContainer) this.hopTransitionContainer.remove();
+
+        const container = this.createTerminalWindow('hop-transition', '#ffaa00', '0 0 30px #ffaa00');
+        container.style.borderColor = '#ffaa00';
+        container.style.boxShadow = '0 0 30px #ffaa00';
+        container.style.color = '#ffaa00';
+
+        // Заголовок
+        const title = document.createElement('h3');
+        title.innerText = `> ACCESSING HOP ${toHop} <`;
+        title.style.textAlign = 'center';
+        title.style.marginBottom = '20px';
+        title.style.color = '#ffaa00';
+        container.appendChild(title);
+
+        // Сообщения сценария
+        const messages = this.getHopTransitionMessages(fromHop, toHop);
+        const msgDiv = document.createElement('div');
+        msgDiv.style.marginBottom = '20px';
+        msgDiv.style.minHeight = '120px';
+        msgDiv.style.fontSize = '1.1em';
+        container.appendChild(msgDiv);
+
+        // Анимированное появление сообщений
+        messages.forEach((msg, idx) => {
+            const line = document.createElement('div');
+            line.innerText = `> ${msg}`;
+            line.style.marginBottom = '8px';
+            line.style.opacity = '0';
+            line.style.transition = 'opacity 0.3s';
+            line.style.transitionDelay = `${idx * 0.5}s`;
+            msgDiv.appendChild(line);
+            // Запускаем анимацию после добавления в DOM
+            setTimeout(() => line.style.opacity = '1', 50);
+        });
+
+        document.body.appendChild(container);
+        this.hopTransitionContainer = container;
+        setTimeout(() => container.style.opacity = '1', 10);
+    }
+
+    // Скрытие окна перехода (аналог hideIntro)
+    public hideHopTransition(): void {
+        if (this.hopTransitionContainer) {
+            this.hopTransitionContainer.style.opacity = '0';
+            setTimeout(() => {
+                this.hopTransitionContainer?.remove();
+                this.hopTransitionContainer = null;
+            }, 500);
+        }
+    }
+
+    // Сценарии для переходов (можно расширять)
+    private getHopTransitionMessages(fromHop: number, toHop: number): string[] {
+        const story: Record<number, string[]> = {
+            1: [
+                "Perimeter breach detected.",
+                "Guest access granted on edge node.",
+                "Vulnerability exploited: CVE-2024-1234.",
+                "Backdoor established. Proceeding to internal network."
+            ],
+            2: [
+                "Firewall bypassed using ICMP tunneling.",
+                "Privilege escalation successful.",
+                "Access level elevated to operator.",
+                "Pivoting to core segment."
+            ],
+            3: [
+                "Core segment reached. Mainframe detected.",
+                "Exploiting unpatched service: 'vsftpd 2.3.4'.",
+                "Root access acquired.",
+                "Initiating payload delivery. System breach imminent."
+            ]
+        };
+        return story[fromHop] || ["System breach.", "Access granted.", "Moving deeper."];
     }
 }

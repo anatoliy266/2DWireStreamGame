@@ -86,6 +86,12 @@ export class EnemyManager {
         this.enemies = newEnemies;
     }
 
+    reindexEnemies(): void {
+        this.enemies.forEach((enemy, index) => {
+            enemy.slotIndex = index;
+        });
+    }
+
     clearDead(): void {
         this.enemies = this.enemies.filter(e => e.isAlive());
     }
@@ -133,6 +139,125 @@ export class EnemyManager {
     }
 }
 
+// export class SlotManager {
+//     public attackSlots: AttackSlot[] = [];
+//     public defenseSlots: DefenseSlot[] = [];
+
+//     constructor() {
+//         this.reset();
+//     }
+
+//     reset(): void {
+//         this.attackSlots = Array(3).fill(null).map(() => new AttackSlot());
+//         this.defenseSlots = Array(4).fill(null).map(() => new DefenseSlot());
+//     }
+
+//     assignDefenseTargets(playerIds: (string | null)[]): void {
+//         for (let i = 0; i < this.defenseSlots.length; i++) {
+//             this.defenseSlots[i].assignedPlayerId = playerIds[i] || null;
+//         }
+//     }
+
+//     addAttackCommand(cmdName: string, power: number, userId: string, userName: string): void {
+//         const existingIndex = this.attackSlots.findIndex(slot => slot.commandName === cmdName);
+//         if (existingIndex !== -1) {
+//             const slot = this.attackSlots[existingIndex];
+//             slot.addContributor(userId, userName, power);
+//             return;
+//         }
+
+//         const emptyIndex = this.attackSlots.findIndex(slot => slot.isEmpty());
+//         if (emptyIndex !== -1) {
+//             const slot = this.attackSlots[emptyIndex];
+//             slot.commandName = cmdName;
+//             slot.addContributor(userId, userName, power);
+//             return;
+//         }
+
+//         let minIndex = 0;
+//         let minPower = this.attackSlots[0].totalPower;
+//         for (let i = 1; i < this.attackSlots.length; i++) {
+//             if (this.attackSlots[i].totalPower < minPower) {
+//                 minPower = this.attackSlots[i].totalPower;
+//                 minIndex = i;
+//             }
+//         }
+
+//         if (power > minPower) {
+//             const slot = this.attackSlots[minIndex];
+//             slot.clear();
+//             slot.commandName = cmdName;
+//             slot.addContributor(userId, userName, power);
+//         }
+//     }
+
+//     addDefenseCommand(cmdName: string, power: number, userId: string, userName: string, targetSlot: number | null): void {
+//         const tryAddToSlot = (slot: DefenseSlot, slotIndex: number): boolean => {
+//             if (slot.commandName === cmdName) {
+//                 slot.addContributor(userId, userName, power);
+//                 return true;
+//             }
+//             if (slot.isEmpty()) {
+//                 slot.commandName = cmdName;
+//                 slot.addContributor(userId, userName, power);
+//                 return true;
+//             }
+//             if (power > slot.totalPower) {
+//                 slot.clear();
+//                 slot.commandName = cmdName;
+//                 slot.addContributor(userId, userName, power);
+//                 return true;
+//             }
+//             return false;
+//         };
+
+//         if (targetSlot !== null && targetSlot >= 0 && targetSlot < this.defenseSlots.length) {
+//             tryAddToSlot(this.defenseSlots[targetSlot], targetSlot);
+//             return;
+//         }
+
+//         const existingIndex = this.defenseSlots.findIndex(slot => slot.commandName === cmdName);
+//         if (existingIndex !== -1) {
+//             this.defenseSlots[existingIndex].addContributor(userId, userName, power);
+//             return;
+//         }
+
+//         const emptyIndex = this.defenseSlots.findIndex(slot => slot.isEmpty());
+//         if (emptyIndex !== -1) {
+//             const slot = this.defenseSlots[emptyIndex];
+//             slot.commandName = cmdName;
+//             slot.addContributor(userId, userName, power);
+//             return;
+//         }
+
+//         let minIndex = 0;
+//         let minPower = this.defenseSlots[0].totalPower;
+//         for (let i = 1; i < this.defenseSlots.length; i++) {
+//             if (this.defenseSlots[i].totalPower < minPower) {
+//                 minPower = this.defenseSlots[i].totalPower;
+//                 minIndex = i;
+//             }
+//         }
+
+//         if (power > minPower) {
+//             const slot = this.defenseSlots[minIndex];
+//             slot.clear();
+//             slot.commandName = cmdName;
+//             slot.addContributor(userId, userName, power);
+//         }
+//     }
+
+//     getNonEmptyAttackSlots(): AttackSlot[] {
+//         return this.attackSlots.filter(s => !s.isEmpty());
+//     }
+
+//     getNonEmptyDefenseSlots(): DefenseSlot[] {
+//         return this.defenseSlots.filter(s => !s.isEmpty());
+//     }
+// }
+
+
+
 export class SlotManager {
     public attackSlots: AttackSlot[] = [];
     public defenseSlots: DefenseSlot[] = [];
@@ -144,6 +269,39 @@ export class SlotManager {
     reset(): void {
         this.attackSlots = Array(3).fill(null).map(() => new AttackSlot());
         this.defenseSlots = Array(4).fill(null).map(() => new DefenseSlot());
+    }
+
+    // Проверка, были ли атаки игроков в этом ходу
+    hasPlayerAttacks(): boolean {
+        return this.attackSlots.some(slot => !slot.isEmpty());
+    }
+
+    // Проверка, была ли защита игроков в этом ходу
+    hasPlayerDefense(): boolean {
+        return this.defenseSlots.some(slot => !slot.isEmpty());
+    }
+
+    // Проверка, были ли атаки мобов (из предыдущего хода)
+    hasMobAttacks(): boolean {
+        return this.defenseSlots.some(slot => slot.mobPower > 0);
+    }
+
+    // Очищает только команды игроков, оставляя mob-атаки
+    clearAllSlots(): void {
+        // Полностью сбрасываем все слоты атаки
+        this.attackSlots.forEach(slot => slot.clear());
+
+        // Полностью сбрасываем все слоты защиты
+        this.defenseSlots.forEach(slot => {
+            slot.clear(); // очищает level, contributors, commandName, totalPower, powerMap
+
+            // Дополнительно очищаем mob-поля
+            slot.mobCommandName = '';
+            slot.mobPower = 0;
+            slot.mobParams = '';
+
+            // assignedPlayerId НЕ трогаем - он назначается в начале каждого хода в startTurn
+        });
     }
 
     assignDefenseTargets(playerIds: (string | null)[]): void {

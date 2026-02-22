@@ -40,4 +40,8 @@ export class DefenseSlot extends BaseSlot {
     constructor(public assignedPlayerId: string | null = null) {
         super();
     }
+    // Данные об атаке моба на этот слот (заполняются в конце хода)
+    public mobCommandName: string = '';
+    public mobPower: number = 0;
+    public mobParams: string = ''; // для отображения параметра
 }
